@@ -1,0 +1,22 @@
+# Binaries
+bin/
+dist/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
