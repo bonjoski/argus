@@ -331,67 +331,74 @@ Prior to releasing Phase 1, Argus will implement an explicit **Adversarial Regre
 
 ---
 
-## 6. Revised 8-Week Implementation Roadmap
+## 6. Revised 8-Week Implementation Roadmap & Status Tracking
+
+### Current Execution Status: Phase 1 Completed (100%) | Phase 2 Ready for Kickoff
 
 ```
 ┌──────────────────────────────────────┬──────────────────────────────────────┬──────────────────────────────────────┐
 │       PHASE 1: HARDENED CORE         │     PHASE 2: FULL ECOSYSTEM & AI     │     PHASE 3: SHIMS, CI & RELEASE     │
 │             (Weeks 1–3)              │             (Weeks 4–6)              │             (Weeks 7–8)              │
+│          STATUS: COMPLETED           │          STATUS: IN PROGRESS         │          STATUS: SCHEDULED           │
 ├──────────────────────────────────────┼──────────────────────────────────────┼──────────────────────────────────────┤
-│ • Go 1.22+ scaffold & SQLite cache   │ • Crates.io adapter (1 req/s bucket) │ • PATH-prepend proxy shims           │
-│ • npm adapter (Sigstore & downloads) │ • Go Proxy & sum.golang adapter      │ • Non-interactive subshell handling  │
-│ • PyPI adapter (wheels & PEP 740)    │ • Lexical conflation + exemptions    │ • Lockfile parser (npm/Cargo/poetry) │
-│ • Reciprocal VCS validator           │ • Reputational Mitigating Offsets    │ • SARIF v2.1.0 generator             │
-│ • GITHUB_TOKEN & 403 bypass logic    │ • LipGloss interactive TTY card      │ • Adversarial benchmark CI gates     │
-│ • Adversarial Test Suite scaffold    │ • Milestone 2: Multi-Ecosystem Beta  │ • v1.0.0 Production GA & Homebrew    │
+│ [x] Go 1.27.1 scaffold & SQLite cache│ [ ] Crates.io adapter (1 req/s bucket│ [ ] PATH-prepend proxy shims         │
+│ [x] npm adapter (Sigstore & download)│ [ ] Go Proxy & sum.golang adapter    │ [ ] Non-interactive subshell handling│
+│ [x] PyPI adapter (wheels & PEP 740)  │ [ ] Lexical conflation + exemptions  │ [ ] Lockfile parser (npm/Cargo/poetr)│
+│ [x] Reciprocal VCS validator         │ [ ] Reputational Mitigating Offsets  │ [ ] SARIF v2.1.0 generator           │
+│ [x] GITHUB_TOKEN & 403 bypass logic  │ [ ] LipGloss interactive TTY card    │ [ ] Adversarial benchmark CI gates   │
+│ [x] Adversarial Test Suite (ADV-01..)│ [ ] Milestone 2: Multi-Ecosystem Beta│ [ ] v1.0.0 Production GA & Homebrew  │
+│ [x] Full CI/CD & GoReleaser Pipeline │                                      │                                      │
 └──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
 ### Detailed Week-by-Week Work Breakdown
 
-#### Phase 1: Hardened Core & Primary Registries (Weeks 1–3)
-* **Week 1: Foundations & SQLite Storage**
-  - Initialize Go module (`bonjoski/argus`) with Cobra CLI framework.
-  - Implement domain models (`PackageProvenance`, `HeuristicFinding`, `MitigatingOffset`, `RiskReport`).
-  - Implement pure Go SQLite cache (`modernc.org/sqlite`) with TTL management and schema migrations.
-  - Setup CI pipeline with `golangci-lint` and test runners.
-* **Week 2: npm & PyPI Ground-Truth Clients**
-  - Implement npm adapter: metadata parser, `api.npmjs.org` download evaluator, and Sigstore/OIDC `--provenance` verification.
-  - Implement PyPI adapter: wheel vs sdist distribution parser, release cadence tracker, and PEP 740 attestation validator.
-  - Build concurrent HTTP pipeline (`sync/errgroup`) with connection reuse and 500ms request budgeting.
-* **Week 3: Reciprocal VCS Verification & Anti-False-Positive Engine**
-  - Implement two-way VCS verification: fetch and inspect raw repository manifests to verify package ownership.
-  - Implement GitHub token reader (`$GITHUB_TOKEN`) and graceful 403/429 bypass (`INCONCLUSIVE_VCS`).
-  - Wire base scoring engine with penalties (`HR-01` to `HR-05B`) and mitigating offsets (`MO-01` to `MO-03`).
-  - Deliver **Milestone 1**: `argus vet npm <pkg>` and `argus vet pypi <pkg>` passing tests `ADV-01` through `ADV-04`.
+#### Phase 1: Hardened Core & Primary Registries (Weeks 1–3) — COMPLETED
+* **Week 1: Foundations & SQLite Storage** `[COMPLETED - Commit 59038ca]`
+  - [x] Initialized Go module (`bonjoski/argus`) with Go 1.27.1 and Cobra CLI framework (`cmd/argus`, `internal/cli/`).
+  - [x] Implemented domain models (`PackageProvenance`, `HeuristicFinding`, `MitigatingOffset`, `RiskReport`).
+  - [x] Implemented pure Go SQLite cache (`modernc.org/sqlite`) with WAL mode, schema migrations, and millisecond TTL.
+  - [x] Configured CI pipeline with `golangci-lint`, `govulncheck`, and Adversarial Architecture Sentinel.
+* **Week 2: npm & PyPI Ground-Truth Clients** `[COMPLETED - Commit 59038ca]`
+  - [x] Implemented `internal/registry/npm.go`: metadata parser, `api.npmjs.org` download evaluator, and Sigstore/OIDC `--provenance` verification.
+  - [x] Implemented `internal/registry/pypi.go`: wheel vs sdist distribution parser, release cadence tracker, and PEP 740 attestation validator.
+  - [x] Built concurrent HTTP pipeline with connection reuse, bounded readers (`io.LimitReader`), and sub-second timeout contexts.
+* **Week 3: Reciprocal VCS Verification & Anti-False-Positive Engine** `[COMPLETED - Commit 59038ca]`
+  - [x] Implemented two-way VCS verification: parses manifests (`package.json`, `pyproject.toml`) from upstream repositories to verify ownership.
+  - [x] Implemented GitHub token reader (`$GITHUB_TOKEN`) and graceful 403/429 bypass (`INCONCLUSIVE_VCS`).
+  - [x] Built heuristics engine with penalties (`HR-01` to `HR-09`) and mitigating offsets (`MO-01` to `MO-03`).
+  - [x] Implemented 13-point Adversarial Regression Suite (`test/adversarial`) passing with `-race`.
+  - [x] Added production Makefile (`build`, `cross-build`, `test`, `vulncheck`, `sentinel`, `test-cover`).
+  - [x] Configured GitHub Actions CI/CD (`.github/workflows/ci.yml`, `release.yml`, `.goreleaser.yaml`) `[Commit 3a592a9]`.
+  - [x] Added MIT License `[Commit 5cbbc88]`.
+  - [x] **Delivered Milestone 1**: `argus vet npm <pkg>` and `argus vet pypi <pkg>` passing in production with <800ms latency.
 
-#### Phase 2: Full Ecosystem Expansion & Intelligence (Weeks 4–6)
+#### Phase 2: Full Ecosystem Expansion & Intelligence (Weeks 4–6) — READY FOR EXECUTION
 * **Week 4: Crates.io & Go Checksum Adapters**
-  - Implement crates.io adapter with thread-safe 1 req/sec token bucket rate limiter.
-  - Implement Go adapter: query `proxy.golang.org` and `sum.golang.org` checksum database for authenticity validation.
-  - Standardize error classifications across all 4 registries (Not Found vs Timeout vs Rate Limited).
+  - [ ] Implement crates.io adapter with thread-safe 1 req/sec token bucket rate limiter (`internal/registry/crates.go`).
+  - [ ] Implement Go adapter: query `proxy.golang.org` and `sum.golang.org` checksum database for authenticity validation (`internal/registry/gomod.go`).
+  - [ ] Standardize error classifications across all 4 registries (Not Found vs Timeout vs Rate Limited).
 * **Week 5: Lexical Conflation Engine & Namespace Exemptions**
-  - Compile and embed top 5,000 package corpora per ecosystem via Go `embed.FS`.
-  - Implement tokenizer and Trie prefix/suffix matcher.
-  - Implement plugin namespace exemption engine (`eslint-plugin-*`, `pytest-*`, `mkdocs-*`, `django-*`).
-  - Implement `HR-08` Sudden Sleeper Activation detection logic.
+  - [ ] Compile and embed top 5,000 package corpora per ecosystem via Go `embed.FS` (`internal/conflation/`).
+  - [ ] Implement tokenizer and Trie prefix/suffix matcher.
+  - [ ] Implement plugin namespace exemption engine (`eslint-plugin-*`, `pytest-*`, `mkdocs-*`, `django-*`).
+  - [ ] Wire `HR-06` Lexical Conflation rule and `MO-04` Approved Namespace Offset into engine.
 * **Week 6: Offsets Integration & Rich Terminal UX**
-  - Finalize mitigating offsets (`MO-01` to `MO-05`) to eliminate the Day-One False Positive Trap.
-  - Build interactive terminal UI using LipGloss: color-coded risk cards, transparent breakdown of penalties and offsets, and execution latency timer.
-  - Implement interactive prompt overrides and CLI flags (`--strict`, `--threshold`, `--json`).
-  - Deliver **Milestone 2**: Multi-ecosystem CLI passing `ADV-06` through `ADV-09`.
+  - [ ] Finalize mitigating offsets (`MO-01` to `MO-05`) to eliminate the Day-One False Positive Trap.
+  - [ ] Build interactive confirmation prompt: prompt user when score is between 30 and 79; block when $\ge 80$.
+  - [ ] Implement CLI flags (`--strict`, `--threshold`, `--json`).
+  - [ ] Deliver **Milestone 2**: Multi-ecosystem CLI passing `ADV-06` through `ADV-09`.
 
-#### Phase 3: Agent Shims, Lockfiles & Production Release (Weeks 7–8)
+#### Phase 3: Agent Shims, Lockfiles & Production Release (Weeks 7–8) — SCHEDULED
 * **Week 7: PATH-Prepend Proxy Shims & Lockfile Engine**
-  - Implement `argus shim install`: generates proxy binaries in `~/.argus/bin/` to intercept non-interactive agent subshells (`sh -c "npm install ..."`).
-  - Implement lockfile parsers (`package-lock.json`, `Cargo.lock`, `poetry.lock`, `go.sum`) for exact dependency graph vetting.
-  - Implement `--dry-run-inspect` to catch transitive hallucinated packages before execution.
-  - Deliver **Milestone 3**: Full agent subshell protection passing `ADV-05` and `ADV-10`.
+  - [ ] Implement `argus shim install`: generates proxy binaries in `~/.argus/bin/` to intercept non-interactive agent subshells (`sh -c "npm install ..."`).
+  - [ ] Implement lockfile parsers (`package-lock.json`, `Cargo.lock`, `poetry.lock`, `go.sum`) for exact dependency graph vetting.
+  - [ ] Implement `--dry-run-inspect` to catch transitive hallucinated packages before execution.
+  - [ ] Deliver **Milestone 3**: Full agent subshell protection passing `ADV-05` and `ADV-10`.
 * **Week 8: SARIF CI Integration, Benchmarks & GA Release**
-  - Implement SARIF v2.1.0 exporter for GitHub Advanced Security and GitLab CI integration.
-  - Execute full Adversarial Benchmark Suite across 200 real and synthetic packages: assert $>95\%$ recall on squats, $<2\%$ false positive rate on legitimate packages, and p95 latency $<800\text{ms}$.
-  - Configure GoReleaser: multi-arch cross-compilation, Cosign keyless signatures, SLSA Level 3 provenance, and Homebrew tap.
-  - Ship **v1.0.0 Production Release**.
+  - [ ] Implement SARIF v2.1.0 exporter for GitHub Advanced Security and GitLab CI integration.
+  - [ ] Execute full Adversarial Benchmark Suite across 200 real and synthetic packages: assert $>95\%$ recall on squats, $<2\%$ false positive rate on legitimate packages, and p95 latency $<800\text{ms}$.
+  - [ ] Tag and publish **v1.0.0 Production Release** via GoReleaser and Homebrew tap.
 
 ---
 
