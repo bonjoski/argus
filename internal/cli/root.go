@@ -12,10 +12,12 @@ var (
 	GitCommit = "none"
 	BuildDate = "unknown"
 
-	jsonOutput bool
-	strictMode bool
-	threshold  int
-	noCache    bool
+	jsonOutput  bool
+	sarifOutput bool
+	strictMode  bool
+	threshold   int
+	noCache     bool
+	force       bool
 )
 
 var rootCmd = &cobra.Command{
@@ -29,12 +31,16 @@ they are installed by developers or autonomous AI coding agents.`,
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
+	rootCmd.PersistentFlags().BoolVar(&sarifOutput, "sarif", false, "Output results in OASIS SARIF v2.1.0 format")
 	rootCmd.PersistentFlags().BoolVar(&strictMode, "strict", false, "Strict mode: fail on HIGH (>=60) risk scores in addition to CRITICAL")
-	rootCmd.PersistentFlags().IntVar(&threshold, "threshold", 80, "Risk score threshold to trigger hard blocking (default: 80)")
+	rootCmd.PersistentFlags().IntVar(&threshold, "threshold", 50, "Risk score threshold to trigger hard blocking (default: 50)")
 	rootCmd.PersistentFlags().BoolVar(&noCache, "no-cache", false, "Bypass local SQLite cache and force fresh upstream query")
+	rootCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "Force installation even if package risk score is CRITICAL (>=80)")
 
 	rootCmd.AddCommand(newVetCmd())
+	rootCmd.AddCommand(newScanCmd())
 	rootCmd.AddCommand(newCacheCmd())
+	rootCmd.AddCommand(newShimCmd())
 }
 
 func Execute() {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"bonjoski/argus/internal/cache"
@@ -87,6 +88,8 @@ func runVet(cmd *cobra.Command, args []string) error {
 	adapters := []registry.Adapter{
 		registry.NewNPMAdapter(nil),
 		registry.NewPyPIAdapter(nil),
+		registry.NewCratesAdapter(nil),
+		registry.NewGoModAdapter(nil),
 	}
 
 	vcsVerifier := vcs.NewHTTPVerifier(nil)
@@ -108,13 +111,52 @@ func runVet(cmd *cobra.Command, args []string) error {
 	var reporter output.Reporter = output.TTYReporter{}
 	if jsonOutput {
 		reporter = output.JSONReporter{}
+	} else if sarifOutput {
+		reporter = output.SARIFReporter{Version: Version}
 	}
 
 	if err := reporter.Render(os.Stdout, report); err != nil {
 		return fmt.Errorf("rendering output failed: %w", err)
 	}
 
-	// Exit Code Policies
+	// Interactive TTY Mode Check
+	isInteractive := isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) && !jsonOutput && !sarifOutput
+
+	if isInteractive {
+		switch {
+		case report.TotalScore < 30:
+			// Score < 30: Clean (Green) -> proceed cleanly
+			return nil
+		case report.TotalScore >= 30 && report.TotalScore < 80:
+			// Score 30 - 79: Suspicious (Yellow) -> prompt [y/N] confirmation in interactive TTY
+			fmt.Printf("\n⚠ Package risk score is %d/100 (Suspicious). Proceed with installation? [y/N]: ", report.TotalScore)
+			var response string
+			if _, err := fmt.Scanln(&response); err != nil {
+				response = ""
+			}
+			response = strings.TrimSpace(strings.ToLower(response))
+			if response == "y" || response == "yes" {
+				fmt.Println("Proceeding with installation upon user confirmation.")
+				return nil
+			}
+			fmt.Println("Installation aborted by user.")
+			os.Exit(1)
+		default:
+			// Score >= 80: Critical Threat (Red) -> hard block; requires --force
+			if force {
+				fmt.Printf("\n⚡ Warning: Critical threat (%d/100) overridden with --force. Proceeding.\n", report.TotalScore)
+				return nil
+			}
+			fmt.Printf("\n⛔ Hard Block: Critical risk score %d/100 (>= 80). Installation aborted. (Override with --force)\n", report.TotalScore)
+			os.Exit(1)
+		}
+	}
+
+	// Non-Interactive / CI Policies
+	if force {
+		return nil
+	}
+
 	if report.TotalScore >= threshold || report.RiskLevel == model.RiskLevelCritical {
 		os.Exit(1)
 	}

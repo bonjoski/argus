@@ -95,3 +95,53 @@ func TestEngine_ScenarioC_FakeVCSImpersonation(t *testing.T) {
 		t.Errorf("expected RiskLevelCritical, got %s", report.RiskLevel)
 	}
 }
+
+func TestEngine_HR06_LexicalConflation(t *testing.T) {
+	engine := DefaultEngine()
+
+	// Package "express-auth-helpers" blends express + auth + helpers
+	prov := &model.PackageProvenance{
+		Name:      "express-auth-helpers",
+		Ecosystem: model.EcosystemNPM,
+	}
+
+	report := engine.Evaluate(prov)
+	var foundHR06 bool
+	for _, p := range report.Penalties {
+		if p.RuleID == "HR-06" && p.Triggered {
+			foundHR06 = true
+			break
+		}
+	}
+	if !foundHR06 {
+		t.Errorf("expected HR-06 (Lexical Conflation) to trigger for express-auth-helpers")
+	}
+}
+
+func TestEngine_MO04_ApprovedNamespace(t *testing.T) {
+	engine := DefaultEngine()
+
+	prov := &model.PackageProvenance{
+		Name:      "pytest-fastapi-deps",
+		Ecosystem: model.EcosystemPyPI,
+	}
+
+	report := engine.Evaluate(prov)
+	var foundMO04 bool
+	for _, o := range report.Offsets {
+		if o.OffsetID == "MO-04" && o.Triggered {
+			foundMO04 = true
+			break
+		}
+	}
+	if !foundMO04 {
+		t.Errorf("expected MO-04 (Approved Namespace) to trigger for pytest-fastapi-deps")
+	}
+
+	// Verify that HR-06 was NOT triggered due to exemption
+	for _, p := range report.Penalties {
+		if p.RuleID == "HR-06" && p.Triggered {
+			t.Errorf("expected HR-06 to be suppressed for approved namespace plugin")
+		}
+	}
+}

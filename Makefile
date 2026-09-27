@@ -151,11 +151,15 @@ tidy: ## Verify and tidy Go modules
 # ==============================================================================
 
 .PHONY: demo
-demo: build ## Run live demo smoke tests on npm (express) and PyPI (requests)
+demo: build ## Run live demo smoke tests on npm (express), PyPI (requests), Cargo (serde), and Go (gin)
 	@echo "==> Running live smoke tests..."
 	./$(BIN_DIR)/$(BINARY_NAME) vet npm express
 	@echo ""
 	./$(BIN_DIR)/$(BINARY_NAME) vet pypi requests
+	@echo ""
+	./$(BIN_DIR)/$(BINARY_NAME) vet cargo serde
+	@echo ""
+	./$(BIN_DIR)/$(BINARY_NAME) vet go github.com/gin-gonic/gin
 
 .PHONY: clean
 clean: ## Remove build artifacts, test binaries, and coverage reports

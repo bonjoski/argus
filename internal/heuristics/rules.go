@@ -3,6 +3,7 @@ package heuristics
 import (
 	"time"
 
+	"bonjoski/argus/internal/conflation"
 	"bonjoski/argus/internal/model"
 )
 
@@ -146,6 +147,40 @@ func (r SpoofedVCSRule) Evaluate(prov *model.PackageProvenance) (bool, map[strin
 	return false, nil
 }
 
+// LexicalConflationRule (HR-06): Blends high-reputation ecosystem tokens or typosquats a popular package.
+type LexicalConflationRule struct {
+	conflationEngine *conflation.Engine
+}
+
+func NewLexicalConflationRule(e *conflation.Engine) LexicalConflationRule {
+	if e == nil {
+		e = conflation.DefaultEngine()
+	}
+	return LexicalConflationRule{conflationEngine: e}
+}
+
+func (r LexicalConflationRule) ID() string   { return "HR-06" }
+func (r LexicalConflationRule) Name() string { return "Lexical Conflation" }
+func (r LexicalConflationRule) Points() int  { return 25 }
+func (r LexicalConflationRule) Description() string {
+	return "Package blends high-reputation ecosystem tokens or typosquats a popular package"
+}
+func (r LexicalConflationRule) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
+	engine := r.conflationEngine
+	if engine == nil {
+		engine = conflation.DefaultEngine()
+	}
+	res := engine.Evaluate(prov.Name, prov.Ecosystem)
+	if res.IsConflated {
+		return true, map[string]any{
+			"target":    res.TargetPkg,
+			"typosquat": res.IsTyposquat,
+			"reason":    res.Reason,
+		}
+	}
+	return false, nil
+}
+
 // AuthorEphemeralityRule (HR-07): Author account age < 30 days.
 type AuthorEphemeralityRule struct{}
 
@@ -264,6 +299,43 @@ func (o ReciprocalVCSMatchOffset) Evaluate(prov *model.PackageProvenance) (bool,
 		return true, map[string]any{
 			"repo_age_months": prov.RepositoryAgeMonths,
 			"manifest_name":   prov.RepositoryManifestName,
+		}
+	}
+	return false, nil
+}
+
+// ApprovedNamespaceOffset (MO-04): Standard plugin naming convention or approved namespace.
+type ApprovedNamespaceOffset struct{}
+
+func (o ApprovedNamespaceOffset) ID() string   { return "MO-04" }
+func (o ApprovedNamespaceOffset) Name() string { return "Approved Ecosystem Namespace" }
+func (o ApprovedNamespaceOffset) Credits() int { return 20 }
+func (o ApprovedNamespaceOffset) Description() string {
+	return "Standard plugin naming convention (pytest-*, eslint-plugin-*, mkdocs-*, django-*, cargo-*) or approved scope"
+}
+func (o ApprovedNamespaceOffset) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
+	if conflation.IsApprovedNamespace(prov.Name, prov.Ecosystem) {
+		return true, map[string]any{
+			"ecosystem": string(prov.Ecosystem),
+			"package":   prov.Name,
+		}
+	}
+	return false, nil
+}
+
+// CleanProvenanceOffset (MO-05): Clean packaging profile with no install scripts and binary distributions.
+type CleanProvenanceOffset struct{}
+
+func (o CleanProvenanceOffset) ID() string   { return "MO-05" }
+func (o CleanProvenanceOffset) Name() string { return "Clean Provenance Profile" }
+func (o CleanProvenanceOffset) Credits() int { return 10 }
+func (o CleanProvenanceOffset) Description() string {
+	return "Package conforms to modern packaging standards (no lifecycle scripts, verified distribution artifact)"
+}
+func (o CleanProvenanceOffset) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
+	if !prov.HasInstallScripts && (prov.HasBinaryWheels || prov.InGoChecksumDB || (prov.Ecosystem == model.EcosystemCargo && prov.IntegrityHash != "") || (prov.Ecosystem == model.EcosystemNPM && prov.IntegrityHash != "")) {
+		if prov.TotalReleases > 1 || (!prov.FirstReleaseDate.IsZero() && time.Since(prov.FirstReleaseDate).Hours() > 24*7) {
+			return true, map[string]any{"clean_profile": true}
 		}
 	}
 	return false, nil

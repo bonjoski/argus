@@ -34,6 +34,7 @@ func DefaultEngine() *Engine {
 		NegligibleAdoptionRule{},
 		DetachedVCSRule{},
 		SpoofedVCSRule{},
+		NewLexicalConflationRule(nil),
 		AuthorEphemeralityRule{},
 		SuddenSleeperRule{},
 		InstallLifecycleHooksRule{},
@@ -43,6 +44,8 @@ func DefaultEngine() *Engine {
 		CryptographicAttestationOffset{},
 		EstablishedAuthorOffset{},
 		ReciprocalVCSMatchOffset{},
+		ApprovedNamespaceOffset{},
+		CleanProvenanceOffset{},
 	}
 
 	return NewEngine(penalties, offsets)
