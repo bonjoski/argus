@@ -39,6 +39,7 @@ archives:
         format: zip
     files:
       - README.md
+      - LICENSE
       - PROJECT_PLAN.md
       - docs/*
 

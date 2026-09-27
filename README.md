@@ -66,3 +66,9 @@ $$\text{Final Risk Score} = \text{clamp}\left(0, 100, \sum \text{Penalties} - \s
 * Full engineering project plan: [PROJECT_PLAN.md](PROJECT_PLAN.md)
 * Adversarial Red Team audit: [docs/adversarial_audit_report.md](docs/adversarial_audit_report.md)
 * Initial PDF specification: [project_plan.pdf](project_plan.pdf)
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
