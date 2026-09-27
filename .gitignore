@@ -20,3 +20,5 @@ Thumbs.db
 *.dylib
 *.test
 *.out
+coverage.html
+*.db
