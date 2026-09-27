@@ -1,0 +1,185 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # 1. Code Quality, Formatting & Static Analysis
+  # ----------------------------------------------------------------------------
+  lint-and-hygiene:
+    name: Code Hygiene & Linter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+
+      - name: Verify Module Integrity
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod or go.sum is not tidy" && exit 1)
+          go mod verify
+
+      - name: Verify Formatting (gofmt)
+        run: |
+          DIFF=$(gofmt -l .)
+          if [ -n "$DIFF" ]; then
+            echo "The following files are not formatted:"
+            echo "$DIFF"
+            exit 1
+          fi
+
+      - name: Go Vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  # ----------------------------------------------------------------------------
+  # 2. Adversarial Architecture & Security Sentinel Scanner
+  # ----------------------------------------------------------------------------
+  adversarial-sentinel:
+    name: Adversarial Sentinel Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Sentinel Scanner
+        run: python3 scripts/sentinel_audit.py --path .
+
+  # ----------------------------------------------------------------------------
+  # 3. Supply Chain Vulnerability Audit (govulncheck)
+  # ----------------------------------------------------------------------------
+  vulnerability-audit:
+    name: Govulncheck CVE Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+
+      - name: Run Govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-input: "1.23.x"
+          go-package: ./...
+
+  # ----------------------------------------------------------------------------
+  # 4. Multi-Platform Test Matrix with Race Detection
+  # ----------------------------------------------------------------------------
+  test-matrix:
+    name: Test (${{ matrix.os }}, Go ${{ matrix.go }})
+    needs: [lint-and-hygiene, adversarial-sentinel]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        go: ["1.22.x", "1.23.x"]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Run Unit Tests with Race Detector
+        run: go test -race -v ./...
+
+      - name: Run Adversarial Regression Suite
+        run: go test -race -v ./test/adversarial/...
+
+  # ----------------------------------------------------------------------------
+  # 5. Code Coverage Analysis
+  # ----------------------------------------------------------------------------
+  coverage:
+    name: Code Coverage
+    needs: [test-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+
+      - name: Generate Coverage Report
+        run: |
+          go test -race -coverprofile=coverage.out -covermode=atomic ./...
+          go tool cover -func=coverage.out
+          go tool cover -html=coverage.out -o coverage.html
+
+      - name: Upload Coverage HTML Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 14
+
+  # ----------------------------------------------------------------------------
+  # 6. Hermetic Cross-Platform Compilation
+  # ----------------------------------------------------------------------------
+  cross-compile:
+    name: Cross-Compile Artifacts
+    needs: [test-matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+
+      - name: Build All Architectures
+        run: make cross-build
+
+      - name: Smoke Test Native Linux Binary
+        run: |
+          ./bin/argus-linux-amd64 --version
+          ./bin/argus-linux-amd64 --help
+
+      - name: Upload Multi-Arch Binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: argus-binaries
+          path: bin/
+          retention-days: 7

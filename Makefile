@@ -90,8 +90,13 @@ bench: ## Run performance and latency benchmarks with memory allocation metrics
 
 .PHONY: sentinel
 sentinel: ## Run the Adversarial Architecture & Security Sentinel audit scanner
-	@echo "==> Running Adversarial Architecture & Security Sentinel scanner..."
-	@python3 /Users/benskolmoski/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py --path .
+	@if [ -f scripts/sentinel_audit.py ]; then \
+		python3 scripts/sentinel_audit.py --path .; \
+	elif [ -f /Users/benskolmoski/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py ]; then \
+		python3 /Users/benskolmoski/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py --path .; \
+	else \
+		echo "Notice: sentinel_audit.py not found, skipping."; \
+	fi
 
 .PHONY: vulncheck
 vulncheck: ## Scan dependencies for known CVEs using official govulncheck
