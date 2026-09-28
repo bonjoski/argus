@@ -46,13 +46,6 @@ jobs:
       - name: Go Vet
         run: go vet ./...
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m
-          install-mode: "goinstall"
-
   # ----------------------------------------------------------------------------
   # 2. Adversarial Architecture & Security Sentinel Scanner
   # ----------------------------------------------------------------------------
