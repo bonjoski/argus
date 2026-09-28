@@ -58,9 +58,7 @@ func StartBackgroundDaemon(execPath, socketPath, pidPath, logPath string) error 
 	cmd := exec.Command(execPath, "daemon", "run", "--socket", socketPath, "--pid-file", pidPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	cmd.SysProcAttr = sysProcAttrBackground()
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start background daemon process: %w", err)

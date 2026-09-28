@@ -79,9 +79,7 @@ func StartBackgroundMirror(execPath string, port int, upstreamNPM, upstreamPyPI 
 	cmd := exec.Command(execPath, args...)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	cmd.SysProcAttr = sysProcAttrBackground()
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start background mirror process: %w", err)
