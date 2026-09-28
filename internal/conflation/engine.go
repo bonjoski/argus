@@ -186,8 +186,8 @@ func IsApprovedNamespace(pkgName string, eco model.Ecosystem) bool {
 			return true
 		}
 	case model.EcosystemGo:
-		// Subpackages under major domains or vanity hosts
-		if strings.Contains(lower, "/plugins/") || strings.Contains(lower, "/contrib/") {
+		// Official Go sub-repositories, Google domains, or plugin/contrib paths
+		if strings.HasPrefix(lower, "golang.org/x/") || strings.HasPrefix(lower, "google.golang.org/") || strings.HasPrefix(lower, "github.com/golang/") || strings.Contains(lower, "/plugins/") || strings.Contains(lower, "/contrib/") {
 			return true
 		}
 	case model.EcosystemRubyGems:

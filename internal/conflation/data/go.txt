@@ -9,6 +9,12 @@ golang.org/x/sys
 golang.org/x/net
 golang.org/x/crypto
 golang.org/x/text
+golang.org/x/exp
+golang.org/x/tools
+golang.org/x/mod
+golang.org/x/vuln
+golang.org/x/term
+golang.org/x/oauth2
 google.golang.org/grpc
 google.golang.org/protobuf
 github.com/sirupsen/logrus
