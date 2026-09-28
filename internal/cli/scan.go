@@ -83,6 +83,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 		registry.NewPyPIAdapter(nil),
 		registry.NewCratesAdapter(nil),
 		registry.NewGoModAdapter(nil),
+		registry.NewRubyGemsAdapter(nil),
+		registry.NewMavenAdapter(nil),
+		registry.NewPackagistAdapter(nil),
 	}
 
 	vcsVerifier := vcs.NewHTTPVerifier(nil)

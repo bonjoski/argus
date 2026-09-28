@@ -8,6 +8,7 @@ import (
 
 	"bonjoski/argus/internal/cache"
 	"bonjoski/argus/internal/heuristics"
+	"bonjoski/argus/internal/inspector"
 	"bonjoski/argus/internal/model"
 	"bonjoski/argus/internal/registry"
 	"bonjoski/argus/internal/vcs"
@@ -70,7 +71,7 @@ func (s *VettingService) Vet(ctx context.Context, eco model.Ecosystem, pkgName, 
 		return nil, fmt.Errorf("registry resolution failed: %w", err)
 	}
 
-	// 3. Stage 2: Fan-Out Parallel Probes (VCS Verification)
+	// 3. Stage 2: Fan-Out Parallel Probes (VCS Verification & Pre-Flight AST Inspection)
 	var wg sync.WaitGroup
 	if s.vcs != nil && prov.RepositoryURL != "" {
 		wg.Add(1)
@@ -85,6 +86,27 @@ func (s *VettingService) Vet(ctx context.Context, eco model.Ecosystem, pkgName, 
 				prov.RepositoryManifestName = res.ManifestName
 				prov.RepositoryAgeMonths = res.AgeMonths
 				prov.RepositoryCommitsCount = res.CommitsCount
+			}
+		}()
+	}
+
+	// If package declares install scripts and has a tarball URL, inspect the tarball in parallel
+	if prov.HasInstallScripts && prov.TarballURL != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			inspCtx, cancel := context.WithTimeout(ctx, 600*time.Millisecond)
+			defer cancel()
+
+			insp := inspector.New(nil)
+			if res, err := insp.InspectURL(inspCtx, prov.TarballURL); err == nil && res != nil {
+				if res.IsDangerous {
+					prov.HasSuspiciousAST = true
+					for _, f := range res.Findings {
+						prov.SuspiciousFindings = append(prov.SuspiciousFindings,
+							fmt.Sprintf("%s:%d: [%s] %s", f.File, f.Line, f.Category, f.Snippet))
+					}
+				}
 			}
 		}()
 	}

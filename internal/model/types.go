@@ -6,10 +6,13 @@ import "time"
 type Ecosystem string
 
 const (
-	EcosystemNPM   Ecosystem = "npm"
-	EcosystemPyPI  Ecosystem = "pypi"
-	EcosystemCargo Ecosystem = "cargo"
-	EcosystemGo    Ecosystem = "go"
+	EcosystemNPM       Ecosystem = "npm"
+	EcosystemPyPI      Ecosystem = "pypi"
+	EcosystemCargo     Ecosystem = "cargo"
+	EcosystemGo        Ecosystem = "go"
+	EcosystemRubyGems  Ecosystem = "rubygems"
+	EcosystemMaven     Ecosystem = "maven"
+	EcosystemPackagist Ecosystem = "packagist"
 )
 
 // RiskLevel defines the categorized severity of a risk score.
@@ -47,12 +50,14 @@ type PackageProvenance struct {
 	TotalReleases     int       `json:"total_releases"`
 
 	// Ecosystem Specific Telemetry
-	WeeklyDownloads       int64 `json:"weekly_downloads"`        // npm, crates.io
-	HasInstallScripts     bool  `json:"has_install_scripts"`     // npm pre/postinstall
-	HasSigstoreProvenance bool  `json:"has_sigstore_provenance"` // npm --provenance / Sigstore OIDC
-	HasBinaryWheels       bool  `json:"has_binary_wheels"`       // PyPI wheel distributions
-	HasPEP740Attestation  bool  `json:"has_pep740_attestation"`  // PyPI digital attestation
-	InGoChecksumDB        bool  `json:"in_go_checksum_db"`       // Go sum.golang.org presence
+	WeeklyDownloads       int64    `json:"weekly_downloads"`        // npm, crates.io
+	HasInstallScripts     bool     `json:"has_install_scripts"`     // npm pre/postinstall
+	HasSigstoreProvenance bool     `json:"has_sigstore_provenance"` // npm --provenance / Sigstore OIDC
+	HasBinaryWheels       bool     `json:"has_binary_wheels"`       // PyPI wheel distributions
+	HasPEP740Attestation  bool     `json:"has_pep740_attestation"`  // PyPI digital attestation
+	InGoChecksumDB        bool     `json:"in_go_checksum_db"`       // Go sum.golang.org presence
+	HasSuspiciousAST      bool     `json:"has_suspicious_ast"`      // Pre-flight static script inspector
+	SuspiciousFindings    []string `json:"suspicious_findings,omitempty"`
 
 	// VCS Provenance
 	RepositoryURL          string    `json:"repository_url"`

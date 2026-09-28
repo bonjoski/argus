@@ -1,0 +1,35 @@
+# Bitbucket Pipelines Template for Argus (vetpkg) Pre-Flight Dependency Scanning
+# https://github.com/bonjoski/argus
+
+image: golang:1.27
+
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: Argus Supply Chain Dependency Gate
+          caches:
+            - go
+          script:
+            - go install bonjoski/argus/cmd/argus@latest
+            - export PATH=$PATH:$(go env GOPATH)/bin
+            - echo "Scanning dependencies with Argus..."
+            - argus scan . --threshold=50 --sarif > argus-results.sarif || SCAN_EXIT=$?
+            - |
+              if [ "${SCAN_EXIT:-0}" -ne 0 ]; then
+                echo "⛔ Argus gate failed: Dependencies exceeded risk threshold."
+                exit 1
+              fi
+          artifacts:
+            - argus-results.sarif
+
+  branches:
+    main:
+      - step:
+          name: Argus Supply Chain Continuous Audit
+          script:
+            - go install bonjoski/argus/cmd/argus@latest
+            - export PATH=$PATH:$(go env GOPATH)/bin
+            - argus scan . --threshold=50 --sarif > argus-results.sarif
+          artifacts:
+            - argus-results.sarif

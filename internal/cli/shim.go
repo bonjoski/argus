@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"bonjoski/argus/internal/cache"
+	"bonjoski/argus/internal/daemon"
 	"bonjoski/argus/internal/heuristics"
 	"bonjoski/argus/internal/model"
 	"bonjoski/argus/internal/registry"
@@ -149,28 +150,43 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 	eco, targets, isInstall := shim.ExtractTargets(tool, toolArgs)
 
 	if isInstall && len(targets) > 0 {
-		// Initialize Vetting Service
-		var cacheStore cache.Store
-		dbPath, err := cache.DefaultCachePath()
-		if err == nil {
-			cacheStore, _ = cache.NewSQLiteStore(dbPath)
-		}
-		if cacheStore != nil {
-			defer cacheStore.Close()
-		}
-
-		adapters := []registry.Adapter{
-			registry.NewNPMAdapter(nil),
-			registry.NewPyPIAdapter(nil),
-			registry.NewCratesAdapter(nil),
-			registry.NewGoModAdapter(nil),
-		}
-
-		vcsVerifier := vcs.NewHTTPVerifier(nil)
-		evaluator := heuristics.DefaultEngine()
-		vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
-
 		ctx := context.Background()
+
+		// Fast path: Check if resident daemon is active on IPC socket
+		var daemonClient *daemon.Client
+		if defaultSock, _, _, err := daemon.DefaultPaths(); err == nil {
+			dc := daemon.NewClient(defaultSock).WithTimeout(300 * time.Millisecond)
+			if dc.Ping(ctx) == nil {
+				daemonClient = dc
+			}
+		}
+
+		var vettingService *service.VettingService
+		if daemonClient == nil {
+			// Fallback: Initialize In-Process Vetting Service
+			var cacheStore cache.Store
+			dbPath, err := cache.DefaultCachePath()
+			if err == nil {
+				cacheStore, _ = cache.NewSQLiteStore(dbPath)
+			}
+			if cacheStore != nil {
+				defer cacheStore.Close()
+			}
+
+			adapters := []registry.Adapter{
+				registry.NewNPMAdapter(nil),
+				registry.NewPyPIAdapter(nil),
+				registry.NewCratesAdapter(nil),
+				registry.NewGoModAdapter(nil),
+				registry.NewRubyGemsAdapter(nil),
+				registry.NewMavenAdapter(nil),
+				registry.NewPackagistAdapter(nil),
+			}
+
+			vcsVerifier := vcs.NewHTTPVerifier(nil)
+			evaluator := heuristics.DefaultEngine()
+			vettingService = service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
+		}
 
 		for _, spec := range targets {
 			pkgName, version := parsePackageSpec(spec)
@@ -178,7 +194,16 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 				continue
 			}
 
-			report, err := vettingService.Vet(ctx, eco, pkgName, version)
+			var report *model.RiskReport
+			var err error
+
+			if daemonClient != nil {
+				report, err = daemonClient.Vet(ctx, eco, pkgName, version, false)
+			}
+			if report == nil && vettingService != nil {
+				report, err = vettingService.Vet(ctx, eco, pkgName, version)
+			}
+
 			if err != nil {
 				// Registry not found or resolution error
 				fmt.Fprintf(os.Stderr, "⛔ ARGUS INTERCEPT: Dependency %q failed resolution: %v\n", spec, err)

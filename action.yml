@@ -1,0 +1,127 @@
+name: 'Argus Supply Chain Dependency Vetting'
+description: 'Zero-SaaS pre-flight dependency provenance and slopsquatting security gate for CI/CD and PR reviews.'
+author: 'bonjoski'
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  path:
+    description: 'Path to lockfile or project directory to scan (e.g., package-lock.json, Cargo.lock, go.sum, poetry.lock, or .)'
+    required: false
+    default: '.'
+  threshold:
+    description: 'Risk score threshold (0-100) to trigger blocking (default: 50)'
+    required: false
+    default: '50'
+  strict:
+    description: 'Enable strict mode (fail on HIGH risk >= 60 in addition to CRITICAL)'
+    required: false
+    default: 'false'
+  fail-on-risk:
+    description: 'Fail workflow step if suspicious or critical dependencies are detected'
+    required: false
+    default: 'true'
+  sarif-file:
+    description: 'Output filepath for OASIS SARIF v2.1.0 security report'
+    required: false
+    default: 'argus-results.sarif'
+  json-file:
+    description: 'Output filepath for JSON scan report'
+    required: false
+    default: 'argus-results.json'
+  comment-pr:
+    description: 'Post sticky summary table comment on Pull Requests'
+    required: false
+    default: 'true'
+  github-token:
+    description: 'GitHub token for posting PR comments and uploading SARIF'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  total-scanned:
+    description: 'Total number of dependencies analyzed'
+    value: ${{ steps.run-scan.outputs.total_scanned }}
+  high-risk-count:
+    description: 'Number of high and critical risk dependencies identified'
+    value: ${{ steps.run-scan.outputs.high_risk_count }}
+  sarif-file:
+    description: 'Path to the generated SARIF report file'
+    value: ${{ inputs.sarif-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.27.x'
+        check-latest: false
+
+    - name: Build Argus Binary
+      shell: bash
+      run: |
+        if [ ! -f /tmp/argus-bin/argus ]; then
+          mkdir -p /tmp/argus-bin
+          echo "Compiling Argus CLI..."
+          go build -trimpath -o /tmp/argus-bin/argus ./cmd/argus
+        fi
+        echo "/tmp/argus-bin" >> $GITHUB_PATH
+
+    - name: Execute Argus Scan
+      id: run-scan
+      shell: bash
+      run: |
+        STRICT_FLAG=""
+        if [ "${{ inputs.strict }}" = "true" ]; then
+          STRICT_FLAG="--strict"
+        fi
+
+        echo "Running Argus supply chain scan on target: ${{ inputs.path }}"
+        
+        # Run scan and capture JSON
+        argus scan "${{ inputs.path }}" --threshold="${{ inputs.threshold }}" ${STRICT_FLAG} --json > "${{ inputs.json-file }}" || SCAN_EXIT=$?
+        
+        # Run scan and generate SARIF report
+        argus scan "${{ inputs.path }}" --threshold="${{ inputs.threshold }}" ${STRICT_FLAG} --sarif > "${{ inputs.sarif-file }}" 2>/dev/null || true
+
+        TOTAL_SCANNED=$(grep -o '"package":' "${{ inputs.json-file }}" | wc -l | tr -d ' ')
+        HIGH_RISK=$(grep -E '"risk_level":\s*"(HIGH|CRITICAL)"' "${{ inputs.json-file }}" | wc -l | tr -d ' ')
+
+        echo "total_scanned=${TOTAL_SCANNED}" >> $GITHUB_OUTPUT
+        echo "high_risk_count=${HIGH_RISK}" >> $GITHUB_OUTPUT
+        echo "scan_exit=${SCAN_EXIT:-0}" >> $GITHUB_OUTPUT
+
+        echo "Argus Scan complete: ${TOTAL_SCANNED} dependencies analyzed, ${HIGH_RISK} high/critical risk packages detected."
+
+    - name: Post PR Sticky Comment
+      if: github.event_name == 'pull_request' && inputs.comment-pr == 'true' && inputs.github-token != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        COMMENT_BODY="### 🛡️ Argus Pre-Flight Dependency Scan Report\n\n"
+        
+        if [ "${{ steps.run-scan.outputs.high_risk_count }}" -gt 0 ]; then
+          COMMENT_BODY+=":warning: **Security Alert:** Detected **${{ steps.run-scan.outputs.high_risk_count }}** untrusted / suspicious dependencies!\n\n"
+        else
+          COMMENT_BODY+=":white_check_mark: **All dependencies verified:** 0 provenance anomalies detected.\n\n"
+        fi
+
+        COMMENT_BODY+="- **Total Dependencies Scanned:** ${{ steps.run-scan.outputs.total_scanned }}\n"
+        COMMENT_BODY+="- **Risk Threshold:** ${{ inputs.threshold }}/100\n"
+        COMMENT_BODY+="- **Strict Mode:** ${{ inputs.strict }}\n\n"
+        COMMENT_BODY+="*SARIF security report generated at \`${{ inputs.sarif-file }}\`.*"
+
+        gh pr comment "$PR_NUMBER" --body "$(echo -e "$COMMENT_BODY")" || echo "PR comment non-fatal warning"
+
+    - name: Enforce Risk Threshold Gate
+      if: inputs.fail-on-risk == 'true'
+      shell: bash
+      run: |
+        if [ "${{ steps.run-scan.outputs.scan_exit }}" != "0" ]; then
+          echo "⛔ Argus gate failed: High or critical risk dependencies detected above threshold."
+          exit 1
+        fi

@@ -175,3 +175,36 @@ jobs:
           name: argus-binaries
           path: bin/
           retention-days: 7
+
+  # ----------------------------------------------------------------------------
+  # 7. Argus Dogfooding & Supply Chain Gate
+  # ----------------------------------------------------------------------------
+  argus-supply-chain-gate:
+    name: Argus Supply Chain Dogfooding Gate
+    needs: [lint-and-hygiene, adversarial-sentinel]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Build Argus
+        run: go build -trimpath -o bin/argus ./cmd/argus
+
+      - name: Run Argus Self-Scan on Repository Lockfiles
+        run: |
+          ./bin/argus scan go.sum --sarif > argus-results.sarif
+          ./bin/argus scan go.sum --json
+
+      - name: Upload Scan SARIF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: argus-sarif-scan
+          path: argus-results.sarif
+          retention-days: 14
+

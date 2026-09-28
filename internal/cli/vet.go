@@ -11,9 +11,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"bonjoski/argus/internal/cache"
+	"bonjoski/argus/internal/daemon"
 	"bonjoski/argus/internal/heuristics"
 	"bonjoski/argus/internal/model"
 	"bonjoski/argus/internal/output"
+	"bonjoski/argus/internal/policy"
 	"bonjoski/argus/internal/registry"
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/vcs"
@@ -57,14 +59,20 @@ func runVet(cmd *cobra.Command, args []string) error {
 	switch ecoStr {
 	case "npm":
 		eco = model.EcosystemNPM
-	case "pypi", "pip":
+	case "pypi", "pip", "python":
 		eco = model.EcosystemPyPI
 	case "cargo", "crates", "rust":
 		eco = model.EcosystemCargo
 	case "go", "golang":
 		eco = model.EcosystemGo
+	case "rubygems", "gem", "ruby":
+		eco = model.EcosystemRubyGems
+	case "maven", "mvn":
+		eco = model.EcosystemMaven
+	case "packagist", "composer", "php":
+		eco = model.EcosystemPackagist
 	default:
-		return fmt.Errorf("unsupported ecosystem %q (supported: npm, pypi, cargo, go)", ecoStr)
+		return fmt.Errorf("unsupported ecosystem %q (supported: npm, pypi, cargo, go, rubygems, maven, packagist)", ecoStr)
 	}
 
 	pkgName, version := parsePackageSpec(args[1])
@@ -72,39 +80,88 @@ func runVet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid package specification: %s", args[1])
 	}
 
-	// Initialize Cache Store
-	var cacheStore cache.Store
-	if !noCache {
-		dbPath, err := cache.DefaultCachePath()
-		if err == nil {
-			cacheStore, _ = cache.NewSQLiteStore(dbPath)
-		}
-	}
-	if cacheStore != nil {
-		defer cacheStore.Close()
-	}
-
-	// Initialize Adapters
-	adapters := []registry.Adapter{
-		registry.NewNPMAdapter(nil),
-		registry.NewPyPIAdapter(nil),
-		registry.NewCratesAdapter(nil),
-		registry.NewGoModAdapter(nil),
-	}
-
-	vcsVerifier := vcs.NewHTTPVerifier(nil)
-	evaluator := heuristics.DefaultEngine()
-
-	vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
-
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	report, err := vettingService.Vet(ctx, eco, pkgName, version)
-	if err != nil {
-		return fmt.Errorf("vetting failed: %w", err)
+	// Load enterprise policy (.argusrc.yaml) if available
+	entPolicy, _ := policy.Load("")
+	if entPolicy != nil {
+		if entPolicy.Threshold > 0 && !cmd.Flags().Changed("threshold") {
+			threshold = entPolicy.Threshold
+		}
+		if entPolicy.Strict && !cmd.Flags().Changed("strict") {
+			strictMode = entPolicy.Strict
+		}
+
+		// Pre-flight blocklist check
+		if blocked, reason := entPolicy.MatchBlocklist(pkgName, ""); blocked {
+			return fmt.Errorf("POLICY BLOCK: %s", reason)
+		}
+	}
+
+	var report *model.RiskReport
+	var err error
+
+	// Fast path: Query resident daemon over IPC if running and no-cache is false
+	if !noCache {
+		if defaultSock, _, _, pErr := daemon.DefaultPaths(); pErr == nil {
+			dc := daemon.NewClient(defaultSock).WithTimeout(1 * time.Second)
+			if dc.Ping(ctx) == nil {
+				report, err = dc.Vet(ctx, eco, pkgName, version, false)
+			}
+		}
+	}
+
+	// Fallback to in-process service if daemon was not active or did not provide report
+	if report == nil {
+		// Initialize Cache Store
+		var cacheStore cache.Store
+		if !noCache {
+			dbPath, cErr := cache.DefaultCachePath()
+			if cErr == nil {
+				cacheStore, _ = cache.NewSQLiteStore(dbPath)
+			}
+		}
+		if cacheStore != nil {
+			defer cacheStore.Close()
+		}
+
+		// Initialize Adapters
+		adapters := []registry.Adapter{
+			registry.NewNPMAdapter(nil),
+			registry.NewPyPIAdapter(nil),
+			registry.NewCratesAdapter(nil),
+			registry.NewGoModAdapter(nil),
+			registry.NewRubyGemsAdapter(nil),
+			registry.NewMavenAdapter(nil),
+			registry.NewPackagistAdapter(nil),
+		}
+
+		vcsVerifier := vcs.NewHTTPVerifier(nil)
+		evaluator := heuristics.DefaultEngine()
+		vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
+
+		report, err = vettingService.Vet(ctx, eco, pkgName, version)
+		if err != nil {
+			return fmt.Errorf("vetting failed: %w", err)
+		}
+	}
+
+	// Post-evaluation allowlist override
+	if entPolicy != nil {
+		if allowed, reason := entPolicy.MatchAllowlist(pkgName, report.Provenance.AuthorName); allowed {
+			report.TotalScore = 0
+			report.RiskLevel = model.RiskLevelLow
+			report.Offsets = append(report.Offsets, model.MitigatingOffsetFinding{
+				OffsetID:    "MO-POLICY",
+				Name:        "Enterprise Allowlist Exemption",
+				Credits:     100,
+				Description: reason,
+				Triggered:   true,
+			})
+		}
 	}
 
 	// Output Formatting

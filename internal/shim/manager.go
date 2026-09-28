@@ -20,6 +20,8 @@ var SupportedTools = []string{
 	"pip3",
 	"cargo",
 	"go",
+	"gem",
+	"composer",
 }
 
 // DefaultShimDir returns ~/.argus/bin.
@@ -154,6 +156,24 @@ func ExtractTargets(tool string, args []string) (eco model.Ecosystem, targets []
 			if arg == "get" {
 				isInstall = true
 				eco = model.EcosystemGo
+				targets = parseInstallArgs(args[i+1:])
+				return
+			}
+		}
+	case "gem":
+		for i, arg := range args {
+			if arg == "install" || arg == "i" {
+				isInstall = true
+				eco = model.EcosystemRubyGems
+				targets = parseInstallArgs(args[i+1:])
+				return
+			}
+		}
+	case "composer":
+		for i, arg := range args {
+			if arg == "require" || arg == "install" {
+				isInstall = true
+				eco = model.EcosystemPackagist
 				targets = parseInstallArgs(args[i+1:])
 				return
 			}

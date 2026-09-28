@@ -242,6 +242,25 @@ func (r InstallLifecycleHooksRule) Evaluate(prov *model.PackageProvenance) (bool
 	return false, nil
 }
 
+// SuspiciousASTPayloadRule (HR-10): Pre-flight static inspector found dangerous AST patterns.
+type SuspiciousASTPayloadRule struct{}
+
+func (r SuspiciousASTPayloadRule) ID() string   { return "HR-10" }
+func (r SuspiciousASTPayloadRule) Name() string { return "Suspicious Static AST In Payload" }
+func (r SuspiciousASTPayloadRule) Points() int  { return 35 }
+func (r SuspiciousASTPayloadRule) Description() string {
+	return "Static pre-flight inspection detected suspicious process execution, obfuscated eval, or network exfiltration patterns"
+}
+func (r SuspiciousASTPayloadRule) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
+	if prov.HasSuspiciousAST || len(prov.SuspiciousFindings) > 0 {
+		return true, map[string]any{
+			"findings": prov.SuspiciousFindings,
+			"count":    len(prov.SuspiciousFindings),
+		}
+	}
+	return false, nil
+}
+
 // --- Reputational Mitigating Offsets Implementation ---
 
 // CryptographicAttestationOffset (MO-01): Sigstore, GitHub OIDC, or PEP 740 attestation.

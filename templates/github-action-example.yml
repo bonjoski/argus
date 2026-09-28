@@ -1,0 +1,40 @@
+name: Argus Supply Chain Security Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 4 * * 1' # Weekly Monday 04:00 UTC baseline scan
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  argus-gate:
+    name: Dependency Provenance Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Run Argus Dependency Scan Action
+        uses: bonjoski/argus@main
+        with:
+          path: '.'
+          threshold: 50
+          strict: false
+          fail-on-risk: true
+          sarif-file: 'argus-results.sarif'
+          comment-pr: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'argus-results.sarif'
+          category: 'argus-supply-chain'

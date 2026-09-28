@@ -59,6 +59,21 @@ signs:
       - "${artifact}"
     output: true
 
+brews:
+  - repository:
+      owner: bonjoski
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    name: argus
+    homepage: "https://github.com/bonjoski/argus"
+    description: "Zero-SaaS pre-flight dependency interceptor and provenance analyzer"
+    license: "MIT"
+    directory: Formula
+    install: |
+      bin.install "argus"
+    test: |
+      system "#{bin}/argus", "--version"
+
 changelog:
   sort: asc
   filters:

@@ -206,6 +206,12 @@ func (v *HTTPVerifier) checkReciprocalManifest(ctx context.Context, eco model.Ec
 		manifestPath = "Cargo.toml"
 	case model.EcosystemGo:
 		manifestPath = "go.mod"
+	case model.EcosystemPackagist:
+		manifestPath = "composer.json"
+	case model.EcosystemMaven:
+		manifestPath = "pom.xml"
+	case model.EcosystemRubyGems:
+		manifestPath = pkgName + ".gemspec"
 	default:
 		return false, ""
 	}
@@ -221,6 +227,20 @@ func (v *HTTPVerifier) checkReciprocalManifest(ctx context.Context, eco model.Ec
 
 	resp, err := v.client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
+		// For RubyGems, fallback check for Gemfile if gemspec is not root named
+		if eco == model.EcosystemRubyGems && (err != nil || resp.StatusCode == http.StatusNotFound) {
+			rawURL = fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/HEAD/Gemfile", owner, repo)
+			req2, err2 := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+			if err2 == nil {
+				if token != "" {
+					req2.Header.Set("Authorization", "Bearer "+token)
+				}
+				if resp2, err2 := v.client.Do(req2); err2 == nil && resp2.StatusCode == http.StatusOK {
+					defer resp2.Body.Close()
+					return true, pkgName
+				}
+			}
+		}
 		return false, ""
 	}
 	defer resp.Body.Close()
@@ -232,6 +252,13 @@ func (v *HTTPVerifier) checkReciprocalManifest(ctx context.Context, eco model.Ec
 
 	switch eco {
 	case model.EcosystemNPM:
+		var pkg struct {
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(body, &pkg); err == nil && pkg.Name != "" {
+			return strings.EqualFold(pkg.Name, pkgName), pkg.Name
+		}
+	case model.EcosystemPackagist:
 		var pkg struct {
 			Name string `json:"name"`
 		}
@@ -259,6 +286,26 @@ func (v *HTTPVerifier) checkReciprocalManifest(ctx context.Context, eco model.Ec
 			foundMod := string(matches[1])
 			return strings.EqualFold(foundMod, pkgName), foundMod
 		}
+	case model.EcosystemMaven:
+		re := regexp.MustCompile(`(?s)<artifactId>\s*([^<\s]+)\s*</artifactId>`)
+		matches := re.FindSubmatch(body)
+		if len(matches) > 1 {
+			foundArtifact := string(matches[1])
+			// Match either full coordinates or artifactID
+			if strings.Contains(pkgName, ":") {
+				parts := strings.Split(pkgName, ":")
+				return strings.EqualFold(parts[1], foundArtifact), foundArtifact
+			}
+			return strings.EqualFold(pkgName, foundArtifact), foundArtifact
+		}
+	case model.EcosystemRubyGems:
+		re := regexp.MustCompile(`(?m)\.name\s*=\s*["']([^"']+)["']`)
+		matches := re.FindSubmatch(body)
+		if len(matches) > 1 {
+			foundName := string(matches[1])
+			return strings.EqualFold(foundName, pkgName), foundName
+		}
+		return true, pkgName
 	}
 
 	return false, ""

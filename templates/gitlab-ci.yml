@@ -1,0 +1,39 @@
+# GitLab CI/CD Pipeline Template for Argus (vetpkg) Pre-Flight Dependency Scanning
+# https://github.com/bonjoski/argus
+
+stages:
+  - test
+  - security
+
+variables:
+  ARGUS_VERSION: "v0.5.0"
+  ARGUS_THRESHOLD: "50"
+
+argus_dependency_scan:
+  stage: security
+  image: golang:1.27-alpine
+  before_script:
+    - apk add --no-cache curl tar bash git
+    - mkdir -p /tmp/argus-bin
+    - go install bonjoski/argus/cmd/argus@latest
+    - export PATH=$PATH:$(go env GOPATH)/bin
+  script:
+    - echo "Executing Argus Supply Chain Scan..."
+    - argus scan . --threshold=$ARGUS_THRESHOLD --sarif > gl-sast-report.sarif || SCAN_EXIT=$?
+    - argus scan . --threshold=$ARGUS_THRESHOLD --json > argus-report.json || true
+    - |
+      if [ "${SCAN_EXIT:-0}" -ne 0 ]; then
+        echo "⛔ Argus gate failed: Untrusted or slopsquatted dependencies identified."
+        exit 1
+      fi
+  artifacts:
+    name: "argus-security-report-$CI_COMMIT_REF_SLUG"
+    when: always
+    paths:
+      - gl-sast-report.sarif
+      - argus-report.json
+    reports:
+      sast: gl-sast-report.sarif
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

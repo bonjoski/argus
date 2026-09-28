@@ -38,6 +38,7 @@ func DefaultEngine() *Engine {
 		AuthorEphemeralityRule{},
 		SuddenSleeperRule{},
 		InstallLifecycleHooksRule{},
+		SuspiciousASTPayloadRule{},
 	}
 
 	offsets := []OffsetRule{

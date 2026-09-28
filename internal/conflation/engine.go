@@ -73,6 +73,9 @@ func NewEngine() *Engine {
 		{model.EcosystemPyPI, "data/pypi.txt"},
 		{model.EcosystemCargo, "data/cargo.txt"},
 		{model.EcosystemGo, "data/go.txt"},
+		{model.EcosystemRubyGems, "data/rubygems.txt"},
+		{model.EcosystemMaven, "data/maven.txt"},
+		{model.EcosystemPackagist, "data/packagist.txt"},
 	}
 
 	for _, entry := range ecosystems {
@@ -129,7 +132,7 @@ func Tokenize(name string) []string {
 	runes := []rune(name)
 	for i := 0; i < len(runes); i++ {
 		r := runes[i]
-		if r == '-' || r == '_' || r == '.' || r == '/' {
+		if r == '-' || r == '_' || r == '.' || r == '/' || r == ':' {
 			if current.Len() > 0 {
 				tokens = append(tokens, strings.ToLower(current.String()))
 				current.Reset()
@@ -182,6 +185,27 @@ func IsApprovedNamespace(pkgName string, eco model.Ecosystem) bool {
 		// Subpackages under major domains or vanity hosts
 		if strings.Contains(lower, "/plugins/") || strings.Contains(lower, "/contrib/") {
 			return true
+		}
+	case model.EcosystemRubyGems:
+		patterns := []string{"rails-", "sprockets-", "rspec-", "capistrano-", "omniauth-"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemMaven:
+		patterns := []string{"org.springframework.boot:spring-boot-starter-", "org.apache.maven.plugins:", "org.junit.jupiter:"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemPackagist:
+		patterns := []string{"symfony/", "laravel/", "doctrine/", "psr/", "illuminate/"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
 		}
 	}
 

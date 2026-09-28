@@ -73,6 +73,20 @@ func TestExtractTargets(t *testing.T) {
 			expectedTargets: []string{"github.com/gin-gonic/gin@v1.9.1"},
 			expectedInstall: true,
 		},
+		{
+			tool:            "gem",
+			args:            []string{"install", "rails", "--no-document"},
+			expectedEco:     model.EcosystemRubyGems,
+			expectedTargets: []string{"rails"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "composer",
+			args:            []string{"require", "guzzlehttp/guzzle"},
+			expectedEco:     model.EcosystemPackagist,
+			expectedTargets: []string{"guzzlehttp/guzzle"},
+			expectedInstall: true,
+		},
 	}
 
 	for _, tc := range tests {

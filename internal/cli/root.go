@@ -41,6 +41,7 @@ func init() {
 	rootCmd.AddCommand(newScanCmd())
 	rootCmd.AddCommand(newCacheCmd())
 	rootCmd.AddCommand(newShimCmd())
+	rootCmd.AddCommand(newDaemonCmd())
 }
 
 func Execute() {
