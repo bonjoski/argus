@@ -63,7 +63,7 @@ brews:
   - repository:
       owner: bonjoski
       name: homebrew-tap
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      token: "{{ if index .Env \"HOMEBREW_TAP_GITHUB_TOKEN\" }}{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}{{ else }}{{ .Env.GITHUB_TOKEN }}{{ end }}"
     name: argus
     homepage: "https://github.com/bonjoski/argus"
     description: "Zero-SaaS pre-flight dependency interceptor and provenance analyzer"

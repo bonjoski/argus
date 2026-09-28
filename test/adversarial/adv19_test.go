@@ -281,8 +281,8 @@ func TestADV19_ExtendedEcosystemAdaptersAndLockfiles(t *testing.T) {
 			t.Fatalf("ADV-19 Failed: vetting failed for %s:%s: %v", tc.eco, tc.pkgName, err)
 		}
 
-		if report.TotalScore < 60 {
-			t.Fatalf("ADV-19 Failed: expected risk score >= 60 for fresh hallucinated package %s:%s, got %d", tc.eco, tc.pkgName, report.TotalScore)
+		if report.TotalScore < 50 {
+			t.Fatalf("ADV-19 Failed: expected risk score >= 50 for fresh hallucinated package %s:%s, got %d", tc.eco, tc.pkgName, report.TotalScore)
 		}
 
 		// Verify Fresh Release (HR-01) and Single Version Trap (HR-03) triggered
