@@ -10,6 +10,10 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"io"
+	"net/http"
+	"path/filepath"
+
 	"bonjoski/argus/internal/cache"
 	"bonjoski/argus/internal/daemon"
 	"bonjoski/argus/internal/heuristics"
@@ -17,21 +21,33 @@ import (
 	"bonjoski/argus/internal/output"
 	"bonjoski/argus/internal/policy"
 	"bonjoski/argus/internal/registry"
+	"bonjoski/argus/internal/sanitizer"
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/vcs"
 )
 
+var (
+	vetSanitize   bool
+	vetQuarantine bool
+)
+
 func newVetCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "vet <ecosystem> <package>[@version]",
 		Short: "Inspect provenance and compute risk score for a package",
 		Example: `  argus vet npm express
   argus vet npm @angular/core@17.0.0
   argus vet pypi requests
-  argus vet pypi langchain-super-tool --strict`,
+  argus vet pypi langchain-super-tool --strict
+  argus vet npm malicious-pkg --quarantine --sanitize`,
 		Args: cobra.ExactArgs(2),
 		RunE: runVet,
 	}
+
+	cmd.Flags().BoolVar(&vetSanitize, "sanitize", false, "Download and neutralize lifecycle scripts from package archive")
+	cmd.Flags().BoolVar(&vetQuarantine, "quarantine", false, "Download and store package archive in Quarantine Store")
+
+	return cmd
 }
 
 func parsePackageSpec(spec string) (name, version string) {
@@ -174,6 +190,41 @@ func runVet(cmd *cobra.Command, args []string) error {
 
 	if err := reporter.Render(os.Stdout, report); err != nil {
 		return fmt.Errorf("rendering output failed: %w", err)
+	}
+
+	// Action on --quarantine and --sanitize flags if tarball URL is known
+	if (vetQuarantine || vetSanitize) && report.Provenance.TarballURL != "" {
+		req, err := http.NewRequestWithContext(ctx, "GET", report.Provenance.TarballURL, nil)
+		if err == nil {
+			req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+			client := &http.Client{Timeout: 5 * time.Second}
+			resp, err := client.Do(req)
+			if err == nil && resp.StatusCode == http.StatusOK {
+				data, err := io.ReadAll(io.LimitReader(resp.Body, 25*1024*1024))
+				_ = resp.Body.Close()
+				if err == nil {
+					if vetQuarantine {
+						if qStore, qErr := sanitizer.NewQuarantineStore(""); qErr == nil {
+							qRec, qErr := qStore.Quarantine(eco, pkgName, report.ResolvedVersion, data, report, report.Provenance.TarballURL)
+							if qErr == nil && !jsonOutput && !sarifOutput {
+								fmt.Printf("\n☣️ Quarantined raw package archive: %s (ID: %s)\n", qRec.TarballPath, qRec.ID)
+							}
+						}
+					}
+					if vetSanitize {
+						res, sErr := sanitizer.NeutralizeBytes(data, filepath.Base(report.Provenance.TarballURL))
+						if sErr == nil {
+							cleanFileName := fmt.Sprintf("%s-%s.clean.tgz", sanitizer.SanitizePackageName(pkgName), report.ResolvedVersion)
+							if err := os.WriteFile(cleanFileName, res.Data, 0644); err == nil {
+								if !jsonOutput && !sarifOutput {
+									fmt.Printf("🛡️ Neutralized package saved to %s (stripped %d lifecycle hooks)\n", cleanFileName, len(res.StrippedHooks))
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Interactive TTY Mode Check

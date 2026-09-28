@@ -11,7 +11,8 @@
 - ✅ **Milestone 2:** Multi-Ecosystem Expansion (Crates.io, Go Modules, Lexical Conflation Engine, TTY Interactive Confirmation)
 - ✅ **Milestone 3:** Agent Subshell Protection & Production Engine (PATH Shims, Lockfile Scanner, SARIF Exporter, Adversarial Suite ADV-01..13)
 - ✅ **Milestone 4:** Production GA, Extended Adapters, AST Inspector & Policy (RubyGems, Maven Central, Packagist, In-Memory AST Inspector, Enterprise `.argusrc.yaml` Policy, Air-Gapped Cache Seed/Export, ADV-14..15, GoReleaser Cosign & Homebrew Tap)
-- ✅ **Milestone 5 (Delivered):** High-Speed Resident IPC Daemon (`argus daemon`, sub-millisecond IPC socket), GitHub Action Composite (`action.yml`), Enterprise CI/CD Templates (GitLab CI, Bitbucket Pipelines, GitHub Actions Example), Dogfooding CI Gate, Adversarial Suite ADV-16.
+- ✅ **Milestone 5:** High-Speed Resident IPC Daemon (`argus daemon`, sub-millisecond IPC socket), GitHub Action Composite (`action.yml`), Enterprise CI/CD Templates (GitLab CI, Bitbucket Pipelines, GitHub Actions Example), Dogfooding CI Gate, Adversarial Suite ADV-16.
+- ✅ **Milestone 6 (Delivered):** Inline Registry Mirror Proxy (`argus mirror`), Dynamic Install-Script Neutralization (`argus sanitize`), Forensics Quarantine Store (`argus quarantine`), Adversarial Suite ADV-17 & ADV-18.
 
 ---
 
@@ -113,17 +114,17 @@ Every subsequent enhancement must preserve these fundamental invariants:
 ## 3. What's Next: Next Phase Roadmap
 
 ### Workstream 2: Inline Registry Mirror Proxy (`argus mirror`)
-- [ ] **Zero-Config Transparent HTTP Caching & Vetting Proxy**:
+- [x] **Zero-Config Transparent HTTP Caching & Vetting Proxy**:
   - Lightweight embedded HTTP forward/mirror proxy (`argus mirror start --port 8080`).
   - Intercepts outbound package manager traffic (`npm config set registry http://localhost:8080/npm`, `pip config set global.index-url http://localhost:8080/pypi/simple/`).
   - Performs inline pre-flight vetting at HTTP layer, returning HTTP 403 Forbidden with SARIF/JSON diagnostic payloads for blocked packages before payload transmission.
   - Transparent upstream forwarding for allowed packages with streaming cache population.
 
 ### Workstream 4: Dynamic Install-Script Sandboxing & Quarantine (`argus sanitize`)
-- [ ] **Install Script Neutralization / Quarantine**:
+- [x] **Install Script Neutralization / Quarantine**:
   - Provide `--sanitize` flag in `argus vet` and `argus shim` to strip `preinstall`/`postinstall` hooks from downloaded packages before package manager extraction.
   - Quarantine suspicious tarballs into `~/.argus/quarantine/` for post-incident security analysis.
-- [ ] **Adversarial Verification (`ADV-17` & `ADV-18`)**:
+- [x] **Adversarial Verification (`ADV-17` & `ADV-18`)**:
   - ADV-17: Inline Registry Mirror HTTP 403 Pre-Flight Interception.
   - ADV-18: Malicious Install-Script Tarball Neutralization & Quarantine.
 
