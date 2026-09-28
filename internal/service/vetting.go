@@ -73,7 +73,9 @@ func (s *VettingService) Vet(ctx context.Context, eco model.Ecosystem, pkgName, 
 
 	// 3. Stage 2: Fan-Out Parallel Probes (VCS Verification & Pre-Flight AST Inspection)
 	var wg sync.WaitGroup
-	if s.vcs != nil && prov.RepositoryURL != "" {
+	if prov.RepositoryURL == "" {
+		prov.VCSStatus = model.VCSStatusNone
+	} else if s.vcs != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -133,6 +133,10 @@ func runMirrorServer(cmd *cobra.Command) error {
 		registry.NewRubyGemsAdapter(nil),
 		registry.NewMavenAdapter(nil),
 		registry.NewPackagistAdapter(nil),
+		registry.NewNuGetAdapter(nil),
+		registry.NewPubAdapter(nil),
+		registry.NewHexAdapter(nil),
+		registry.NewSwiftAdapter(nil),
 	}
 
 	vcsVerifier := vcs.NewHTTPVerifier(nil)

@@ -17,6 +17,11 @@ func TestDetect(t *testing.T) {
 		{"Cargo.lock", model.EcosystemCargo},
 		{"poetry.lock", model.EcosystemPyPI},
 		{"go.sum", model.EcosystemGo},
+		{"packages.lock.json", model.EcosystemNuGet},
+		{"sub/dir/packages.lock.json", model.EcosystemNuGet},
+		{"pubspec.lock", model.EcosystemPub},
+		{"mix.lock", model.EcosystemHex},
+		{"Package.resolved", model.EcosystemSwift},
 	}
 
 	for _, tc := range tests {
@@ -166,5 +171,236 @@ golang.org/x/sync v0.3.0/go.mod h1:FEe...=
 	}
 	if deps[0].IntegrityHash != "h1:4+TMb2Wus253d8C2D8o6y6...=" {
 		t.Errorf("expected module code hash, got %s", deps[0].IntegrityHash)
+	}
+}
+
+func TestNuGetLockParser(t *testing.T) {
+	nugetLockJSON := `{
+		"version": 1,
+		"dependencies": {
+			"net8.0": {
+				"Newtonsoft.Json": {
+					"type": "Direct",
+					"requested": "[13.0.3, )",
+					"resolved": "13.0.3",
+					"contentHash": "260c=="
+				},
+				"Microsoft.Extensions.Logging": {
+					"type": "Transitive",
+					"resolved": "8.0.0",
+					"contentHash": "800c==",
+					"dependencies": {
+						"Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0"
+					}
+				}
+			}
+		}
+	}`
+
+	parser := &NuGetLockParser{}
+	deps, err := parser.Parse(strings.NewReader(nugetLockJSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing nuget lock: %v", err)
+	}
+
+	if len(deps) != 2 {
+		t.Fatalf("expected 2 dependencies, got %d", len(deps))
+	}
+
+	for _, d := range deps {
+		if d.Name == "Newtonsoft.Json" {
+			if d.Version != "13.0.3" {
+				t.Errorf("expected 13.0.3, got %s", d.Version)
+			}
+			if d.IsTransitive {
+				t.Errorf("expected direct dependency for Newtonsoft.Json")
+			}
+			if d.IntegrityHash != "sha512-260c==" {
+				t.Errorf("expected sha512-260c==, got %s", d.IntegrityHash)
+			}
+			if d.Ecosystem != model.EcosystemNuGet {
+				t.Errorf("expected nuget ecosystem, got %s", d.Ecosystem)
+			}
+		}
+		if d.Name == "Microsoft.Extensions.Logging" {
+			if !d.IsTransitive {
+				t.Errorf("expected transitive dependency for Microsoft.Extensions.Logging")
+			}
+		}
+	}
+}
+
+func TestPubLockParser(t *testing.T) {
+	pubLockYAML := `packages:
+  http:
+    dependency: "direct main"
+    description:
+      name: http
+      sha256: "abcdef123456"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.0"
+  async:
+    dependency: transitive
+    description:
+      name: async
+      sha256: "9876543210"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.11.0"
+`
+
+	parser := &PubLockParser{}
+	deps, err := parser.Parse(strings.NewReader(pubLockYAML))
+	if err != nil {
+		t.Fatalf("unexpected error parsing pub lock: %v", err)
+	}
+
+	if len(deps) != 2 {
+		t.Fatalf("expected 2 dependencies, got %d", len(deps))
+	}
+
+	for _, d := range deps {
+		if d.Name == "http" {
+			if d.Version != "1.2.0" {
+				t.Errorf("expected 1.2.0, got %s", d.Version)
+			}
+			if d.IsTransitive {
+				t.Errorf("expected direct dependency for http")
+			}
+			if d.IntegrityHash != "sha256-abcdef123456" {
+				t.Errorf("expected hash sha256-abcdef123456, got %s", d.IntegrityHash)
+			}
+			if d.Ecosystem != model.EcosystemPub {
+				t.Errorf("expected pub ecosystem, got %s", d.Ecosystem)
+			}
+		}
+		if d.Name == "async" {
+			if !d.IsTransitive {
+				t.Errorf("expected transitive dependency for async")
+			}
+		}
+	}
+}
+
+func TestHexLockParser(t *testing.T) {
+	mixLockElixir := `%{
+  "decimal": {:hex, :decimal, "2.1.1", "a96a17b2b8104e76", [:mix], [], "hexpm", "f1d4"},
+  "phoenix": {:hex, :phoenix, "1.7.10", "c345164bc1f26771", [:mix], [], "hexpm", "58fe"},
+  "custom_git": {:git, "https://github.com/org/custom.git", "gitrev1234", []}
+}`
+
+	parser := &HexLockParser{}
+	deps, err := parser.Parse(strings.NewReader(mixLockElixir))
+	if err != nil {
+		t.Fatalf("unexpected error parsing mix lock: %v", err)
+	}
+
+	if len(deps) != 3 {
+		t.Fatalf("expected 3 dependencies, got %d", len(deps))
+	}
+
+	for _, d := range deps {
+		if d.Name == "decimal" {
+			if d.Version != "2.1.1" {
+				t.Errorf("expected version 2.1.1, got %s", d.Version)
+			}
+			if d.IntegrityHash != "sha256-a96a17b2b8104e76" {
+				t.Errorf("expected hash sha256-a96a17b2b8104e76, got %s", d.IntegrityHash)
+			}
+			if d.Ecosystem != model.EcosystemHex {
+				t.Errorf("expected hex ecosystem, got %s", d.Ecosystem)
+			}
+		}
+		if d.Name == "custom_git" {
+			if d.Version != "gitrev1234" {
+				t.Errorf("expected version gitrev1234, got %s", d.Version)
+			}
+		}
+	}
+}
+
+func TestSwiftLockParser(t *testing.T) {
+	v1JSON := `{
+		"object": {
+			"pins": [
+				{
+					"package": "Alamofire",
+					"repositoryURL": "https://github.com/Alamofire/Alamofire.git",
+					"state": {
+						"revision": "f96bd1f",
+						"version": "5.8.1"
+					}
+				}
+			]
+		},
+		"version": 1
+	}`
+
+	v2JSON := `{
+		"pins": [
+			{
+				"identity": "swift-algorithms",
+				"kind": "remoteSourceControl",
+				"location": "https://github.com/apple/swift-algorithms.git",
+				"state": {
+					"revision": "a1b2c3d4",
+					"version": "1.2.0"
+				}
+			}
+		],
+		"version": 2
+	}`
+
+	v3JSON := `{
+		"pins": [
+			{
+				"identity": "snapkit",
+				"kind": "remoteSourceControl",
+				"location": "https://github.com/SnapKit/SnapKit.git",
+				"state": {
+					"checksum": "snap-checksum-123",
+					"revision": "snaprev789",
+					"version": "5.7.0"
+				}
+			}
+		],
+		"version": 3,
+		"originHash": "orig-hash"
+	}`
+
+	parser := &SwiftLockParser{}
+
+	// Test V1
+	deps1, err := parser.Parse(strings.NewReader(v1JSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing Swift V1: %v", err)
+	}
+	if len(deps1) != 1 || deps1[0].Name != "Alamofire" || deps1[0].Version != "5.8.1" {
+		t.Errorf("unexpected v1 dep: %+v", deps1)
+	}
+	if deps1[0].Ecosystem != model.EcosystemSwift {
+		t.Errorf("expected swift ecosystem, got %s", deps1[0].Ecosystem)
+	}
+
+	// Test V2
+	deps2, err := parser.Parse(strings.NewReader(v2JSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing Swift V2: %v", err)
+	}
+	if len(deps2) != 1 || deps2[0].Name != "swift-algorithms" || deps2[0].Version != "1.2.0" {
+		t.Errorf("unexpected v2 dep: %+v", deps2)
+	}
+
+	// Test V3
+	deps3, err := parser.Parse(strings.NewReader(v3JSON))
+	if err != nil {
+		t.Fatalf("unexpected error parsing Swift V3: %v", err)
+	}
+	if len(deps3) != 1 || deps3[0].Name != "snapkit" || deps3[0].Version != "5.7.0" {
+		t.Errorf("unexpected v3 dep: %+v", deps3)
+	}
+	if deps3[0].IntegrityHash != "snap-checksum-123" {
+		t.Errorf("expected checksum snap-checksum-123, got %s", deps3[0].IntegrityHash)
 	}
 }

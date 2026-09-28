@@ -29,6 +29,7 @@ import (
 var (
 	vetSanitize   bool
 	vetQuarantine bool
+	vetSandbox    bool
 )
 
 func newVetCmd() *cobra.Command {
@@ -46,6 +47,7 @@ func newVetCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&vetSanitize, "sanitize", false, "Download and neutralize lifecycle scripts from package archive")
 	cmd.Flags().BoolVar(&vetQuarantine, "quarantine", false, "Download and store package archive in Quarantine Store")
+	cmd.Flags().BoolVar(&vetSandbox, "sandbox", false, "Run vetting hooks / pre-flight tests in isolated system sandbox")
 
 	return cmd
 }
@@ -87,8 +89,16 @@ func runVet(cmd *cobra.Command, args []string) error {
 		eco = model.EcosystemMaven
 	case "packagist", "composer", "php":
 		eco = model.EcosystemPackagist
+	case "nuget", "dotnet", "csharp":
+		eco = model.EcosystemNuGet
+	case "pub", "dart", "flutter":
+		eco = model.EcosystemPub
+	case "hex", "elixir", "erlang":
+		eco = model.EcosystemHex
+	case "swift", "spm", "swiftpm":
+		eco = model.EcosystemSwift
 	default:
-		return fmt.Errorf("unsupported ecosystem %q (supported: npm, pypi, cargo, go, rubygems, maven, packagist)", ecoStr)
+		return fmt.Errorf("unsupported ecosystem %q (supported: npm, pypi, cargo, go, rubygems, maven, packagist, nuget, pub, hex, swift)", ecoStr)
 	}
 
 	pkgName, version := parsePackageSpec(args[1])
@@ -145,15 +155,7 @@ func runVet(cmd *cobra.Command, args []string) error {
 		}
 
 		// Initialize Adapters
-		adapters := []registry.Adapter{
-			registry.NewNPMAdapter(nil),
-			registry.NewPyPIAdapter(nil),
-			registry.NewCratesAdapter(nil),
-			registry.NewGoModAdapter(nil),
-			registry.NewRubyGemsAdapter(nil),
-			registry.NewMavenAdapter(nil),
-			registry.NewPackagistAdapter(nil),
-		}
+		adapters := registry.DefaultAdapters()
 
 		vcsVerifier := vcs.NewHTTPVerifier(nil)
 		evaluator := heuristics.DefaultEngine()

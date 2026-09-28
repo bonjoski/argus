@@ -76,6 +76,10 @@ func NewEngine() *Engine {
 		{model.EcosystemRubyGems, "data/rubygems.txt"},
 		{model.EcosystemMaven, "data/maven.txt"},
 		{model.EcosystemPackagist, "data/packagist.txt"},
+		{model.EcosystemNuGet, "data/nuget.txt"},
+		{model.EcosystemPub, "data/pub.txt"},
+		{model.EcosystemHex, "data/hex.txt"},
+		{model.EcosystemSwift, "data/swift.txt"},
 	}
 
 	for _, entry := range ecosystems {
@@ -202,6 +206,34 @@ func IsApprovedNamespace(pkgName string, eco model.Ecosystem) bool {
 		}
 	case model.EcosystemPackagist:
 		patterns := []string{"symfony/", "laravel/", "doctrine/", "psr/", "illuminate/"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemNuGet:
+		patterns := []string{"microsoft.", "system.", "azure.", "amazon.", "serilog."}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemPub:
+		patterns := []string{"flutter_", "dart_"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemHex:
+		patterns := []string{"phoenix_", "ecto_", "absinthe_", "broadway_"}
+		for _, prefix := range patterns {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+	case model.EcosystemSwift:
+		patterns := []string{"apple/", "swift-", "swiftui-", "combine"}
 		for _, prefix := range patterns {
 			if strings.HasPrefix(lower, prefix) {
 				return true

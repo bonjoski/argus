@@ -13,6 +13,10 @@ const (
 	EcosystemRubyGems  Ecosystem = "rubygems"
 	EcosystemMaven     Ecosystem = "maven"
 	EcosystemPackagist Ecosystem = "packagist"
+	EcosystemNuGet     Ecosystem = "nuget"
+	EcosystemPub       Ecosystem = "pub"
+	EcosystemHex       Ecosystem = "hex"
+	EcosystemSwift     Ecosystem = "swift"
 )
 
 // RiskLevel defines the categorized severity of a risk score.

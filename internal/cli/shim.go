@@ -17,12 +17,16 @@ import (
 	"bonjoski/argus/internal/heuristics"
 	"bonjoski/argus/internal/model"
 	"bonjoski/argus/internal/registry"
+	"bonjoski/argus/internal/sandbox"
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/shim"
 	"bonjoski/argus/internal/vcs"
 )
 
-var customShimDir string
+var (
+	customShimDir string
+	shimSandbox   bool
+)
 
 func newShimCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -31,6 +35,7 @@ func newShimCmd() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVar(&customShimDir, "dir", "", "Target directory for shims (default: ~/.argus/bin)")
+	cmd.PersistentFlags().BoolVar(&shimSandbox, "sandbox", false, "Enforce system sandbox hardware isolation during command execution")
 
 	cmd.AddCommand(newShimInstallCmd())
 	cmd.AddCommand(newShimUninstallCmd())
@@ -173,15 +178,7 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 				defer cacheStore.Close()
 			}
 
-			adapters := []registry.Adapter{
-				registry.NewNPMAdapter(nil),
-				registry.NewPyPIAdapter(nil),
-				registry.NewCratesAdapter(nil),
-				registry.NewGoModAdapter(nil),
-				registry.NewRubyGemsAdapter(nil),
-				registry.NewMavenAdapter(nil),
-				registry.NewPackagistAdapter(nil),
-			}
+			adapters := registry.DefaultAdapters()
 
 			vcsVerifier := vcs.NewHTTPVerifier(nil)
 			evaluator := heuristics.DefaultEngine()
@@ -230,6 +227,29 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 	realBinary, err := shim.FindRealBinary(tool, shimDir)
 	if err != nil {
 		return fmt.Errorf("argus shim failed to locate real binary for %s: %w", tool, err)
+	}
+
+	if shimSandbox || os.Getenv("ARGUS_SANDBOX") == "1" || os.Getenv("ARGUS_SANDBOX") == "true" {
+		cwd, _ := os.Getwd()
+		profile := &sandbox.Profile{
+			AllowNetwork: true,
+			WorkDir:      cwd,
+		}
+		engine := sandbox.NewEngine()
+		res, err := engine.Run(context.Background(), profile, realBinary, toolArgs...)
+		if err != nil {
+			return fmt.Errorf("sandboxed execution failed: %w", err)
+		}
+		if len(res.Stdout) > 0 {
+			os.Stdout.Write(res.Stdout)
+		}
+		if len(res.Stderr) > 0 {
+			os.Stderr.Write(res.Stderr)
+		}
+		if res.ExitCode != 0 {
+			os.Exit(res.ExitCode)
+		}
+		return nil
 	}
 
 	execCmd := exec.Command(realBinary, toolArgs...)

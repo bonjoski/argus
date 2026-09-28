@@ -37,6 +37,14 @@ func Detect(path string) (Parser, model.Ecosystem, error) {
 		return &PoetryLockParser{}, model.EcosystemPyPI, nil
 	case "go.sum":
 		return &GoSumParser{}, model.EcosystemGo, nil
+	case "packages.lock.json":
+		return &NuGetLockParser{}, model.EcosystemNuGet, nil
+	case "pubspec.lock":
+		return &PubLockParser{}, model.EcosystemPub, nil
+	case "mix.lock":
+		return &HexLockParser{}, model.EcosystemHex, nil
+	case "package.resolved":
+		return &SwiftLockParser{}, model.EcosystemSwift, nil
 	default:
 		return nil, "", fmt.Errorf("unsupported or unrecognized lockfile format: %s", filepath.Base(path))
 	}

@@ -45,6 +45,7 @@ func init() {
 	rootCmd.AddCommand(newMirrorCmd())
 	rootCmd.AddCommand(newSanitizeCmd())
 	rootCmd.AddCommand(newQuarantineCmd())
+	rootCmd.AddCommand(newSandboxCmd())
 }
 
 func Execute() {

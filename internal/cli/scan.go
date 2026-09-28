@@ -78,15 +78,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		defer cacheStore.Close()
 	}
 
-	adapters := []registry.Adapter{
-		registry.NewNPMAdapter(nil),
-		registry.NewPyPIAdapter(nil),
-		registry.NewCratesAdapter(nil),
-		registry.NewGoModAdapter(nil),
-		registry.NewRubyGemsAdapter(nil),
-		registry.NewMavenAdapter(nil),
-		registry.NewPackagistAdapter(nil),
-	}
+	adapters := registry.DefaultAdapters()
 
 	vcsVerifier := vcs.NewHTTPVerifier(nil)
 	evaluator := heuristics.DefaultEngine()

@@ -130,16 +130,33 @@ func setupTestMirror(t *testing.T) (*httptest.Server, *Server, *int64, *int64) {
 				"time": {
 					"created": "2020-01-01T00:00:00Z",
 					"modified": "2024-01-01T00:00:00Z",
-					"1.0.0": "2020-01-01T00:00:00Z"
+					"1.0.0": "2020-01-01T00:00:00Z",
+					"1.1.0": "2021-01-01T00:00:00Z",
+					"2.0.0": "2024-01-01T00:00:00Z"
 				},
 				"versions": {
 					"1.0.0": {
 						"name": "clean-pkg",
 						"version": "1.0.0",
 						"dist": {"tarball": "http://upstream/clean-pkg/-/clean-pkg-1.0.0.tgz"}
+					},
+					"1.1.0": {
+						"name": "clean-pkg",
+						"version": "1.1.0"
+					},
+					"2.0.0": {
+						"name": "clean-pkg",
+						"version": "2.0.0"
 					}
+				},
+				"repository": {
+					"type": "git",
+					"url": "https://github.com/clean-pkg/clean-pkg.git"
 				}
 			}`))
+		case r.URL.Path == "/downloads/point/last-week/clean-pkg":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"downloads": 50000}`))
 		case r.URL.Path == "/clean-pkg/-/clean-pkg-1.0.0.tgz":
 			atomic.AddInt64(&cleanServed, 1)
 			w.Header().Set("Content-Type", "application/octet-stream")
