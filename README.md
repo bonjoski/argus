@@ -41,6 +41,7 @@
 - [Enterprise Policy Configuration (`.argusrc.yaml`)](#-enterprise-policy-configuration-argusrcyaml)
 - [CI/CD & GitHub Actions Integration](#-cicd--github-actions-integration)
 - [Adversarial Verification Suite](#-adversarial-verification-suite)
+- [The Sovereign Supply Chain & AI Security Suite](#-the-sovereign-supply-chain--ai-security-suite)
 - [Contributing & Development](#-contributing--development)
 - [License](#-license)
 
@@ -580,6 +581,40 @@ Run the full adversarial test suite locally:
 ```bash
 make test-adversarial
 ```
+
+---
+
+## 🌐 The Sovereign Supply Chain & AI Security Suite
+
+Argus is part of a sovereign security triad engineered to protect autonomous AI coding agents, developer workstations, and enterprise pipelines from supply chain compromise:
+
+```
+                                 [ Developer / AI Coding Agent ]
+                                                |
+                 +------------------------------+------------------------------+
+                 | (1. Secrets & Auth Gate)     | (2. Pre-Flight Vetting Gate) | (3. Hardware Isolation)
+                 v                              v                              v
+    +-------------------------+    +-------------------------+    +-------------------------+
+    |     🔐 Locksmith        |    |       👁️ Argus          |    |      🛡️ Airlock         |
+    | (Biometric Vault & MCP) |    | (Provenance Interceptor)|    | (Zero-VM Sandbox & Box) |
+    +-------------------------+    +-------------------------+    +-------------------------+
+    | • Touch ID/Hello gates  |    | • 11 Package Registries |    | • Process confinement   |
+    | • MCP secret provider   |    | • <1ms Pre-Flight IPC   |    | • Deny ~/.ssh & AWS keys|
+    | • Binary whitelisting   |    | • Slopsquatting defense |    | • Ephemeral filesystem  |
+    +-------------------------+    +-------------------------+    +-------------------------+
+```
+
+### 1. [Argus](https://github.com/bonjoski/argus) (`vetpkg`) — *Pre-Flight Provenance & Slopsquatting Interceptor*
+- **Role:** Gatekeeper at the network and package boundary.
+- **Focus:** Prevents hallucinated or malicious packages from ever being pulled down by querying authoritative upstream registries, evaluating heuristic risk scores in `<1ms`, and halting install commands pre-flight.
+
+### 2. [Airlock](https://github.com/bonjoski/airlock) (`boxpkg`) — *Zero-VM Workstation Process & Network Sandbox*
+- **Role:** Execution containment for package manager scripts and build lifecycles.
+- **Focus:** Restricts `postinstall`, `setup.py`, and `build.rs` execution using hardware-enforced macOS Seatbelt (SBPL) and Linux Landlock/namespaces, preventing untrusted dependencies from accessing `~/.ssh`, `~/.aws`, Keychain Services, or modifying host files.
+
+### 3. [Locksmith](https://github.com/bonjoski/locksmith) — *Biometric-Protected Secret Vault & AI Agent Key Management*
+- **Role:** Identity, token, and cryptographic credential vault.
+- **Focus:** Stores API tokens, GitHub credentials, and signing keys in native OS keychains with biometric authentication (Touch ID, Windows Hello, Polkit) and a native **Model Context Protocol (MCP)** server for secure AI agent access without plaintext secret leakage.
 
 ---
 
