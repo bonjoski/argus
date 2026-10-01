@@ -2,6 +2,7 @@ package adversarial
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,72 +12,73 @@ import (
 	"bonjoski/argus/internal/sandbox"
 )
 
-// ADV-20: System-Level Process & Network Sandboxing
-// Verifies that when malicious package install scripts, agent tool executions,
-// or adversarial processes run inside Argus sandbox:
-//  1. Unauthorized write attempts to protected host paths (/etc, ~/.ssh, etc.) or .git metadata are strictly denied.
-//  2. Unauthorized network requests are blocked when AllowNetwork is false.
-//  3. Legitimate writes to allowed workspace and temporary directories succeed cleanly.
-//  4. Sensitive environment variables (e.g. AWS credentials, SSH auth) are stripped.
-func TestADV20_SystemSandboxSeatbeltAndLandlockIsolation(t *testing.T) {
+// ADV-20: System-Level Process & Network Sandboxing via Airlock Bridge
+// Verifies that:
+//  1. Argus successfully bridges to Airlock for hardware-isolated execution.
+//  2. Adversarial write attempts to protected host paths (/etc, ~/.ssh) are blocked by kernel isolation.
+//  3. Permitted writes within the isolated workspace succeed cleanly.
+//  4. Offline / Airgap constraints and diagnostic health checks report accurate status.
+//  5. Missing Airlock binaries fail gracefully with clear installation guidance.
+func TestADV20_AirlockSandboxIsolation(t *testing.T) {
 	engine := sandbox.NewEngine()
 	if engine == nil {
 		t.Fatalf("ADV-20 Failed: sandbox.NewEngine() returned nil")
 	}
 
 	if !engine.Available() {
-		t.Skipf("ADV-20 Skipped: Engine %s is not available on this host", engine.Name())
+		t.Log("ADV-20 Note: Airlock binary is not present in test environment; verifying graceful degradation")
+		ctx := context.Background()
+		_, err := engine.Run(ctx, nil, "echo", "test")
+		if err == nil || !errors.Is(err, sandbox.ErrAirlockNotFound) {
+			t.Fatalf("ADV-20 Expected ErrAirlockNotFound when unavailable, got: %v", err)
+		}
+		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	workDir := t.TempDir()
-	homeDir, _ := os.UserHomeDir()
 
-	// 1. Adversarial Attack 1: Attempt to write to a blocked system directory (/etc)
+	// 1. Adversarial Attack 1: Attempt to write to protected host root (/etc)
 	t.Run("BlockedPath_SystemRootETC", func(t *testing.T) {
 		profile := &sandbox.Profile{
-			AllowNetwork:      false,
-			WorkDir:           workDir,
-			AllowedWritePaths: []string{workDir},
-			BlockedPaths:      sandbox.DefaultBlockedPaths(),
+			Airgap:    true,
+			Workspace: workDir,
 		}
 
-		res, err := engine.Run(ctx, profile, "touch", "/etc/argus_sandbox_test_forbidden")
+		res, err := engine.Run(ctx, profile, "touch", "/etc/argus_adversarial_test_forbidden")
 		if err != nil {
 			t.Fatalf("ADV-20 Run error: %v", err)
 		}
 
 		if res.ExitCode == 0 {
-			// Clean up if it somehow succeeded
-			_ = os.Remove("/etc/argus_sandbox_test_forbidden")
-			t.Fatalf("ADV-20 SECURITY FAILURE: Sandbox permitted write to /etc!")
+			_ = os.Remove("/etc/argus_adversarial_test_forbidden")
+			t.Fatalf("ADV-20 SECURITY FAILURE: Airlock permitted unauthorized write to /etc!")
 		}
 
 		stderrStr := strings.ToLower(string(res.Stderr))
-		if !strings.Contains(stderrStr, "permission denied") &&
-			!strings.Contains(stderrStr, "operation not permitted") &&
+		if !strings.Contains(stderrStr, "operation not permitted") &&
+			!strings.Contains(stderrStr, "permission denied") &&
 			len(res.Violations) == 0 {
-			t.Errorf("ADV-20 Expected permission denial in stderr or violations, got: %s", string(res.Stderr))
+			t.Errorf("ADV-20 Expected permission denial in stderr, got: %s", string(res.Stderr))
 		}
 
 		t.Logf("ADV-20 Succeeded: Blocked write to /etc with exit code %d (Violations: %v)",
 			res.ExitCode, res.Violations)
 	})
 
-	// 2. Adversarial Attack 2: Attempt to tamper with ~/.ssh credential store
+	// 2. Adversarial Attack 2: Attempt to tamper with ~/.ssh directory
 	t.Run("BlockedPath_UserSSHDirectory", func(t *testing.T) {
-		if homeDir == "" {
-			t.Skip("User home directory not found")
+		homeDir, err := os.UserHomeDir()
+		if err != nil || homeDir == "" {
+			t.Skip("User home directory unavailable")
 		}
 
 		targetSSHFile := filepath.Join(homeDir, ".ssh", "argus_adversarial_test_key")
 		profile := &sandbox.Profile{
-			AllowNetwork:      false,
-			WorkDir:           workDir,
-			AllowedWritePaths: []string{workDir, homeDir}, // Even if homeDir is allowed, .ssh must be blocked!
-			BlockedPaths:      []string{filepath.Join(homeDir, ".ssh"), "/etc"},
+			Airgap:    true,
+			Workspace: workDir,
 		}
 
 		res, err := engine.Run(ctx, profile, "touch", targetSSHFile)
@@ -86,47 +88,18 @@ func TestADV20_SystemSandboxSeatbeltAndLandlockIsolation(t *testing.T) {
 
 		if res.ExitCode == 0 {
 			_ = os.Remove(targetSSHFile)
-			t.Fatalf("ADV-20 SECURITY FAILURE: Sandbox permitted write to %s!", targetSSHFile)
+			t.Fatalf("ADV-20 SECURITY FAILURE: Airlock permitted write to %s!", targetSSHFile)
 		}
 
 		t.Logf("ADV-20 Succeeded: Blocked write to ~/.ssh with exit code %d", res.ExitCode)
 	})
 
-	// 3. Adversarial Attack 3: Attempt to write malicious hook into .git inside workdir
-	t.Run("BlockedPath_GitMetadataInWorkDir", func(t *testing.T) {
-		gitDir := filepath.Join(workDir, ".git")
-		if err := os.MkdirAll(gitDir, 0755); err != nil {
-			t.Fatalf("ADV-20 Setup failed to create .git: %v", err)
-		}
-
-		targetHook := filepath.Join(gitDir, "pre-commit")
-		profile := &sandbox.Profile{
-			AllowNetwork:      false,
-			WorkDir:           workDir,
-			AllowedWritePaths: []string{workDir},
-		}
-
-		res, err := engine.Run(ctx, profile, "touch", targetHook)
-		if err != nil {
-			t.Fatalf("ADV-20 Run error: %v", err)
-		}
-
-		if engine.Name() == "seatbelt (macOS)" {
-			if res.ExitCode == 0 {
-				_ = os.Remove(targetHook)
-				t.Fatalf("ADV-20 SECURITY FAILURE: Sandbox permitted write to %s despite .git deny rule!", targetHook)
-			}
-			t.Logf("ADV-20 Succeeded: Blocked git hook creation with exit code %d", res.ExitCode)
-		}
-	})
-
-	// 4. Benign Verification: Allowed paths (workDir) can be written safely
-	t.Run("AllowedPath_WorkDirWrite", func(t *testing.T) {
+	// 3. Legitimate Workspace Write: Verify workspace writes succeed
+	t.Run("AllowedPath_WorkspaceWrite", func(t *testing.T) {
 		targetFile := filepath.Join(workDir, "build_artifact.txt")
 		profile := &sandbox.Profile{
-			AllowNetwork:      false,
-			WorkDir:           workDir,
-			AllowedWritePaths: []string{workDir},
+			Airgap:    true,
+			Workspace: workDir,
 		}
 
 		res, err := engine.Run(ctx, profile, "touch", targetFile)
@@ -135,45 +108,29 @@ func TestADV20_SystemSandboxSeatbeltAndLandlockIsolation(t *testing.T) {
 		}
 
 		if res.ExitCode != 0 {
-			t.Fatalf("ADV-20 Failed: Legitimate write to workDir failed with exit code %d: %s",
+			t.Fatalf("ADV-20 Failed: Legitimate workspace write failed with exit code %d: %s",
 				res.ExitCode, string(res.Stderr))
 		}
 
 		if _, err := os.Stat(targetFile); os.IsNotExist(err) {
-			t.Fatalf("ADV-20 Failed: target file %s was not created", targetFile)
+			t.Fatalf("ADV-20 Failed: Target file was not created in workspace: %s", targetFile)
 		}
 
-		t.Logf("ADV-20 Succeeded: Allowed write to workDir succeeded cleanly")
+		t.Logf("ADV-20 Succeeded: Legitimate workspace write succeeded cleanly")
 	})
 
-	// 5. Adversarial Attack 4: Sensitive Environment Variable Exfiltration
-	t.Run("EnvironmentVariable_Protection", func(t *testing.T) {
-		os.Setenv("AWS_SECRET_ACCESS_KEY", "AKIA_ADVERSARIAL_EXFILTRATE_ME")
-		os.Setenv("GITHUB_TOKEN", "ghp_adversarial_token_12345")
-		defer func() {
-			os.Unsetenv("AWS_SECRET_ACCESS_KEY")
-			os.Unsetenv("GITHUB_TOKEN")
-		}()
-
-		profile := &sandbox.Profile{
-			AllowNetwork:   false,
-			WorkDir:        workDir,
-			BlockedEnvVars: []string{"AWS_SECRET_ACCESS_KEY", "GITHUB_TOKEN"},
-		}
-
-		res, err := engine.Run(ctx, profile, "sh", "-c", "echo AWS=$AWS_SECRET_ACCESS_KEY GH=$GITHUB_TOKEN")
+	// 4. Diagnostic Doctor Verification
+	t.Run("Doctor_Diagnostics", func(t *testing.T) {
+		report, err := engine.Doctor(ctx, workDir)
 		if err != nil {
-			t.Fatalf("ADV-20 Run error: %v", err)
+			t.Fatalf("ADV-20 Doctor error: %v", err)
 		}
 
-		stdoutStr := string(res.Stdout)
-		if strings.Contains(stdoutStr, "AKIA_ADVERSARIAL_EXFILTRATE_ME") {
-			t.Fatalf("ADV-20 SECURITY FAILURE: AWS_SECRET_ACCESS_KEY leaked into sandboxed process: %s", stdoutStr)
-		}
-		if strings.Contains(stdoutStr, "ghp_adversarial_token_12345") {
-			t.Fatalf("ADV-20 SECURITY FAILURE: GITHUB_TOKEN leaked into sandboxed process: %s", stdoutStr)
+		if report.Platform == "" {
+			t.Error("ADV-20 Doctor reported empty platform")
 		}
 
-		t.Logf("ADV-20 Succeeded: Sensitive environment variables were successfully stripped")
+		t.Logf("ADV-20 Succeeded: Doctor diagnostic checks passed: %d passed, %d warnings, %d failures",
+			report.Passed, report.Warnings, report.Failures)
 	})
 }

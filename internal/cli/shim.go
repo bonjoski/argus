@@ -233,7 +233,7 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		profile := &sandbox.Profile{
 			AllowNetwork: true,
-			WorkDir:      cwd,
+			Workspace:    cwd,
 		}
 		engine := sandbox.NewEngine()
 		res, err := engine.Run(context.Background(), profile, realBinary, toolArgs...)
