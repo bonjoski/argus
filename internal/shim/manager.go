@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"bonjoski/argus/internal/model"
@@ -53,7 +54,17 @@ func Status(shimDir string) ShimStatus {
 
 	for _, tool := range SupportedTools {
 		target := filepath.Join(shimDir, tool)
-		if fi, err := os.Stat(target); err == nil && !fi.IsDir() && (fi.Mode()&0111 != 0) {
+		targetCmd := filepath.Join(shimDir, tool+".cmd")
+		installed := false
+		if fi, err := os.Stat(target); err == nil && !fi.IsDir() && (runtime.GOOS == "windows" || fi.Mode()&0111 != 0) {
+			installed = true
+		} else if runtime.GOOS == "windows" {
+			if fi, err := os.Stat(targetCmd); err == nil && !fi.IsDir() {
+				installed = true
+			}
+		}
+
+		if installed {
 			stat.Installed = append(stat.Installed, tool)
 		} else {
 			stat.Missing = append(stat.Missing, tool)
@@ -101,6 +112,21 @@ exec "$ARGUS_BIN" shim exec %s "$@"
 		if err := os.WriteFile(shimPath, []byte(content), 0755); err != nil {
 			return fmt.Errorf("failed to write shim for %s: %w", tool, err)
 		}
+
+		// On Windows, additionally generate .cmd batch wrapper for native cmd.exe/PowerShell
+		if runtime.GOOS == "windows" {
+			cmdPath := filepath.Join(shimDir, tool+".cmd")
+			cmdContent := fmt.Sprintf(`@echo off
+rem Argus Pre-Flight Subshell Interception Shim for %s
+setlocal
+set "ARGUS_BIN=%%ARGUS_BIN%%"
+if "%%ARGUS_BIN%%"=="" set "ARGUS_BIN=%s"
+endlocal & "%%ARGUS_BIN%%" shim exec %s %%*
+`, tool, argusBin, tool)
+			if err := os.WriteFile(cmdPath, []byte(cmdContent), 0755); err != nil {
+				return fmt.Errorf("failed to write cmd wrapper for %s: %w", tool, err)
+			}
+		}
 	}
 
 	return nil
@@ -112,6 +138,11 @@ func Uninstall(shimDir string) error {
 		shimPath := filepath.Join(shimDir, tool)
 		if err := os.Remove(shimPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove shim for %s: %w", tool, err)
+		}
+
+		cmdPath := filepath.Join(shimDir, tool+".cmd")
+		if err := os.Remove(cmdPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove cmd shim for %s: %w", tool, err)
 		}
 	}
 	return nil
@@ -240,9 +271,21 @@ func FindRealBinary(tool, shimDir string) (string, error) {
 			continue
 		}
 
-		candidate := filepath.Join(cleanDir, tool)
-		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && (fi.Mode()&0111 != 0) {
-			return candidate, nil
+		candidates := []string{filepath.Join(cleanDir, tool)}
+		if runtime.GOOS == "windows" {
+			candidates = append(candidates,
+				filepath.Join(cleanDir, tool+".cmd"),
+				filepath.Join(cleanDir, tool+".exe"),
+				filepath.Join(cleanDir, tool+".bat"),
+			)
+		}
+
+		for _, candidate := range candidates {
+			if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
+				if runtime.GOOS == "windows" || (fi.Mode()&0111 != 0) {
+					return candidate, nil
+				}
+			}
 		}
 	}
 
@@ -261,7 +304,7 @@ func FindRealBinary(tool, shimDir string) (string, error) {
 			continue
 		}
 		candidate := filepath.Join(dir, tool)
-		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && (fi.Mode()&0111 != 0) {
+		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && (runtime.GOOS == "windows" || fi.Mode()&0111 != 0) {
 			return candidate, nil
 		}
 	}

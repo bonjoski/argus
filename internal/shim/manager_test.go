@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"bonjoski/argus/internal/model"
@@ -140,7 +141,7 @@ func TestShimLifecycle(t *testing.T) {
 			t.Errorf("shim %s missing: %v", tool, err)
 			continue
 		}
-		if fi.Mode()&0111 == 0 {
+		if runtime.GOOS != "windows" && (fi.Mode()&0111 == 0) {
 			t.Errorf("shim %s is not executable", tool)
 		}
 	}
@@ -157,12 +158,15 @@ func TestShimLifecycle(t *testing.T) {
 }
 
 func TestFindRealBinary(t *testing.T) {
-	// Should find "sh" which exists on macOS/Linux
-	path, err := FindRealBinary("sh", "/fake/shim/dir")
+	testCmd := "sh"
+	if runtime.GOOS == "windows" {
+		testCmd = "cmd"
+	}
+	path, err := FindRealBinary(testCmd, "/fake/shim/dir")
 	if err != nil {
-		t.Fatalf("FindRealBinary('sh') failed: %v", err)
+		t.Fatalf("FindRealBinary(%q) failed: %v", testCmd, err)
 	}
 	if path == "" {
-		t.Errorf("expected non-empty path for 'sh'")
+		t.Errorf("expected non-empty path for %q", testCmd)
 	}
 }

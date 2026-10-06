@@ -272,7 +272,7 @@ func FindAirlock() (string, bool) {
 	}
 
 	// 2. PATH lookup
-	for _, name := range []string{"airlock", "boxpkg"} {
+	for _, name := range []string{"airlock", "airlock.exe", "boxpkg", "boxpkg.exe"} {
 		if path, err := exec.LookPath(name); err == nil {
 			if abs, err := filepath.Abs(path); err == nil {
 				return abs, true
@@ -285,26 +285,36 @@ func FindAirlock() (string, bool) {
 	home, _ := os.UserHomeDir()
 	var candidates []string
 	if home != "" {
-		candidates = append(candidates, filepath.Join(home, ".airlock", "bin", "airlock"))
-		candidates = append(candidates, filepath.Join(home, ".local", "bin", "airlock"))
-		candidates = append(candidates, filepath.Join(home, "go", "bin", "airlock"))
+		candidates = append(candidates,
+			filepath.Join(home, ".airlock", "bin", "airlock"),
+			filepath.Join(home, ".airlock", "bin", "airlock.exe"),
+			filepath.Join(home, ".local", "bin", "airlock"),
+			filepath.Join(home, ".local", "bin", "airlock.exe"),
+			filepath.Join(home, "go", "bin", "airlock"),
+			filepath.Join(home, "go", "bin", "airlock.exe"),
+		)
 	}
 	candidates = append(candidates,
 		"/opt/homebrew/bin/airlock",
 		"/usr/local/bin/airlock",
 		"/usr/bin/airlock",
+		`C:\Program Files\Airlock\bin\airlock.exe`,
+		`C:\airlock\bin\airlock.exe`,
 	)
 
 	// 4. Sibling development directories
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(cwd, "..", "airlock", "bin", "airlock"),
+			filepath.Join(cwd, "..", "airlock", "bin", "airlock.exe"),
 			filepath.Join(cwd, "bin", "airlock"),
+			filepath.Join(cwd, "bin", "airlock.exe"),
 		)
 	}
 	if home != "" {
 		candidates = append(candidates,
 			filepath.Join(home, "supplychain", "airlock", "bin", "airlock"),
+			filepath.Join(home, "supplychain", "airlock", "bin", "airlock.exe"),
 		)
 	}
 

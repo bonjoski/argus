@@ -339,11 +339,15 @@ func TestADV19_ExtendedEcosystemAdaptersAndLockfiles(t *testing.T) {
 		if len(deps) != 2 {
 			t.Fatalf("expected 2 dependencies, got %d", len(deps))
 		}
-		if deps[0].IsTransitive {
-			t.Errorf("expected direct dependency for first item")
+		depMap := make(map[string]lockfile.LockedDependency)
+		for _, d := range deps {
+			depMap[d.Name] = d
 		}
-		if !deps[1].IsTransitive {
-			t.Errorf("expected transitive dependency for second item")
+		if d, ok := depMap["Newtonsoft.Json"]; !ok || d.IsTransitive {
+			t.Errorf("expected direct dependency for Newtonsoft.Json")
+		}
+		if d, ok := depMap["Microsoft.Extensions.Logging"]; !ok || !d.IsTransitive {
+			t.Errorf("expected transitive dependency for Microsoft.Extensions.Logging")
 		}
 	})
 
