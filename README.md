@@ -12,7 +12,7 @@
   <a href="https://github.com/bonjoski/argus/actions/workflows/ci.yml"><img src="https://github.com/bonjoski/argus/actions/workflows/ci.yml/badge.svg" alt="CI Pipeline Status"/></a>
   <a href="https://github.com/bonjoski/argus/releases/latest"><img src="https://img.shields.io/github/v/release/bonjoski/argus?color=blue&label=release" alt="Latest Release"/></a>
   <a href="https://github.com/bonjoski/argus/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"/></a>
-  <a href="https://golang.org"><img src="https://img.shields.io/badge/go-1.27.1-blue.svg" alt="Go Version"/></a>
+  <a href="https://golang.org"><img src="https://img.shields.io/badge/go-1.27.2-blue.svg" alt="Go Version"/></a>
   <a href="https://sigstore.dev"><img src="https://img.shields.io/badge/cosign-keyless--signed-blueviolet.svg" alt="Cosign Keyless Signed"/></a>
 </p>
 
@@ -623,7 +623,7 @@ Argus is part of a sovereign security triad engineered to protect autonomous AI 
 We welcome contributions from security researchers, language ecosystem maintainers, and agent tool developers.
 
 ### Development Prerequisites
-- Go `1.27.1+`
+- Go `1.27.2+`
 - Python `3.11+` (for architectural sentinel audits)
 - `make`
 

@@ -1,6 +1,6 @@
 module bonjoski/argus
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
