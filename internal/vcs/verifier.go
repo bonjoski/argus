@@ -144,7 +144,7 @@ func (v *HTTPVerifier) verifyGitHub(ctx context.Context, eco model.Ecosystem, pk
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := v.client.Do(req)
 	if err != nil {

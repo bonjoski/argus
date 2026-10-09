@@ -198,7 +198,7 @@ func runVet(cmd *cobra.Command, args []string) error {
 	if (vetQuarantine || vetSanitize) && report.Provenance.TarballURL != "" {
 		req, err := http.NewRequestWithContext(ctx, "GET", report.Provenance.TarballURL, nil)
 		if err == nil {
-			req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+			req.Header.Set("User-Agent", "Argus/1.0")
 			client := &http.Client{Timeout: 5 * time.Second}
 			resp, err := client.Do(req)
 			if err == nil && resp.StatusCode == http.StatusOK {

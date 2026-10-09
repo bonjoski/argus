@@ -108,7 +108,7 @@ func (insp *Inspector) InspectURL(ctx context.Context, downloadURL string) (*Res
 	if err != nil {
 		return nil, fmt.Errorf("failed to create inspect request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := insp.client.Do(req)
 	if err != nil {

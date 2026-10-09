@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/bonjoski/argus/main/docs/assets/argus-banner.png" alt="Argus Banner" width="600" onerror="this.style.display='none'"/>
 </p>
 
-<h1 align="center">Argus (vetpkg)</h1>
+<h1 align="center">Argus</h1>
 
 <p align="center">
   <strong>Zero-SaaS Pre-Flight Dependency Provenance Interceptor & AI Slopsquatting Defense</strong>
@@ -49,7 +49,7 @@
 
 ## 👁️ What is Argus?
 
-**Argus (`vetpkg`)** is a fast, sovereign, zero-SaaS CLI security engine, resident daemon, and transparent network interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted dependencies **before** package managers write them to disk or execute dangerous install-time lifecycle hooks.
+**Argus** is a fast, sovereign, zero-SaaS CLI security engine, resident daemon, and transparent network interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted dependencies **before** package managers write them to disk or execute dangerous install-time lifecycle hooks.
 
 Unlike traditional Software Composition Analysis (SCA) tools that look up known CVEs in stale vulnerability databases, Argus analyzes **real-time provenance and behavioural signals** directly from authoritative package registries (npm, PyPI, Crates.io, Go Proxy, NuGet, etc.) and upstream VCS repositories.
 
@@ -207,23 +207,23 @@ Download the latest pre-compiled binary for your operating system and architectu
 
 ```bash
 # macOS (Apple Silicon - M1/M2/M3/M4)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/argus_0.5.0_darwin_arm64.tar.gz
-tar -xzf argus_0.5.0_darwin_arm64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_darwin_arm64.tar.gz
+tar -xzf argus_0.2.0_darwin_arm64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # macOS (Intel)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/argus_0.5.0_darwin_amd64.tar.gz
-tar -xzf argus_0.5.0_darwin_amd64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_darwin_amd64.tar.gz
+tar -xzf argus_0.2.0_darwin_amd64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # Linux (x86_64)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/argus_0.5.0_linux_amd64.tar.gz
-tar -xzf argus_0.5.0_linux_amd64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_linux_amd64.tar.gz
+tar -xzf argus_0.2.0_linux_amd64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # Linux (ARM64 / Graviton / Raspberry Pi)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/argus_0.5.0_linux_arm64.tar.gz
-tar -xzf argus_0.5.0_linux_arm64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_linux_arm64.tar.gz
+tar -xzf argus_0.2.0_linux_arm64.tar.gz
 sudo mv argus /usr/local/bin/
 ```
 
@@ -233,8 +233,8 @@ All official Argus release binaries are keylessly signed via **Sigstore Cosign**
 
 ```bash
 # Download checksum and signature files
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/checksums.txt
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.5.0/checksums.txt.sig
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/checksums.txt
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/checksums.txt.sig
 
 # Verify signature against Sigstore transparency log (Rekor / Fulcio)
 cosign verify-blob \
@@ -250,7 +250,7 @@ sha256sum -c checksums.txt --ignore-missing
 ### 3. Via Go Toolchain
 
 ```bash
-go install bonjoski/argus/cmd/argus@v0.5.0
+go install bonjoski/argus/cmd/argus@v0.2.0
 ```
 
 ### 4. Build from Source
@@ -532,7 +532,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Argus Scan
-        uses: bonjoski/argus@v0.5.0
+        uses: bonjoski/argus@v0.2.0
         with:
           lockfile: package-lock.json
           threshold: 50
@@ -604,7 +604,7 @@ Argus is part of a sovereign security triad engineered to protect autonomous AI 
     +-------------------------+    +-------------------------+    +-------------------------+
 ```
 
-### 1. [Argus](https://github.com/bonjoski/argus) (`vetpkg`) — *Pre-Flight Provenance & Slopsquatting Interceptor*
+### 1. [Argus](https://github.com/bonjoski/argus) — *Pre-Flight Provenance & Slopsquatting Interceptor*
 - **Role:** Gatekeeper at the network and package boundary.
 - **Focus:** Prevents hallucinated or malicious packages from ever being pulled down by querying authoritative upstream registries, evaluating heuristic risk scores in `<1ms`, and halting install commands pre-flight.
 

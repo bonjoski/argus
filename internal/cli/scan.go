@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
+	"bonjoski/argus/internal/ast"
 	"bonjoski/argus/internal/cache"
+	"bonjoski/argus/internal/daemon"
 	"bonjoski/argus/internal/heuristics"
 	"bonjoski/argus/internal/lockfile"
 	"bonjoski/argus/internal/model"
@@ -21,17 +24,26 @@ import (
 	"bonjoski/argus/internal/vcs"
 )
 
+var (
+	astScan bool
+)
+
 func newScanCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "scan <lockfile>",
-		Short: "Perform transitive provenance scan across a project lockfile",
+	cmd := &cobra.Command{
+		Use:   "scan <lockfile | paths...>",
+		Short: "Perform transitive provenance scan across a project lockfile or raw source AST",
 		Example: `  argus scan package-lock.json
   argus scan Cargo.lock --json
   argus scan poetry.lock --sarif
-  argus scan go.sum --strict`,
-		Args: cobra.ExactArgs(1),
+  argus scan go.sum --strict
+  argus scan --ast ./src`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: runScan,
 	}
+
+	cmd.Flags().BoolVar(&astScan, "ast", false, "Scan raw source files for imported dependencies without requiring a lockfile")
+
+	return cmd
 }
 
 type scanSummary struct {
@@ -43,6 +55,10 @@ type scanSummary struct {
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
+	if astScan {
+		return runASTScan(cmd, args)
+	}
+
 	filePath := args[0]
 
 	f, err := os.Open(filePath)
@@ -243,4 +259,204 @@ func renderScanSummary(w *os.File, filePath string, s scanSummary) {
 	} else {
 		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("⛔ Pre-flight lockfile scan failed. Malicious or hallucinated dependencies detected."))
 	}
+}
+
+func runASTScan(cmd *cobra.Command, paths []string) error {
+	var candidateList []ast.ImportCandidate
+	seen := make(map[string]bool)
+
+	for _, p := range paths {
+		info, err := os.Stat(p)
+		if err != nil {
+			return fmt.Errorf("failed to access path %s: %w", p, err)
+		}
+		if !info.IsDir() {
+			cands, err := ast.ExtractImportsFromFile(p)
+			if err != nil {
+				return fmt.Errorf("failed to extract imports from %s: %w", p, err)
+			}
+			for _, c := range cands {
+				key := fmt.Sprintf("%s:%s", c.Ecosystem, c.PackageName)
+				if !seen[key] {
+					seen[key] = true
+					candidateList = append(candidateList, c)
+				}
+			}
+			continue
+		}
+
+		err = filepath.Walk(p, func(path string, f os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if f.IsDir() {
+				name := f.Name()
+				if name == ".git" || name == "node_modules" || name == "vendor" || name == ".gemini" || name == "scratch" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if _, ok := ast.DetectEcosystem(path); !ok {
+				return nil
+			}
+			cands, err := ast.ExtractImportsFromFile(path)
+			if err != nil {
+				return nil
+			}
+			for _, c := range cands {
+				key := fmt.Sprintf("%s:%s", c.Ecosystem, c.PackageName)
+				if !seen[key] {
+					seen[key] = true
+					candidateList = append(candidateList, c)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to walk directory %s: %w", p, err)
+		}
+	}
+
+	if len(candidateList) == 0 {
+		if jsonOutput {
+			summary := scanSummary{TotalScanned: 0, Reports: []*model.RiskReport{}}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(summary)
+		}
+		fmt.Printf("Notice: No third-party dependencies found across source files in %v\n", paths)
+		return nil
+	}
+
+	var cacheStore cache.Store
+	if !noCache {
+		dbPath, err := cache.DefaultCachePath()
+		if err == nil {
+			cacheStore, _ = cache.NewSQLiteStore(dbPath)
+		}
+	}
+	if cacheStore != nil {
+		defer cacheStore.Close()
+	}
+
+	adapters := registry.DefaultAdapters()
+	vcsVerifier := vcs.NewHTTPVerifier(nil)
+	evaluator := heuristics.DefaultEngine()
+	vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
+
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	const workerCount = 5
+	jobs := make(chan ast.ImportCandidate, len(candidateList))
+	results := make(chan *model.RiskReport, len(candidateList))
+
+	var wg sync.WaitGroup
+	for w := 0; w < workerCount; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for cand := range jobs {
+				var report *model.RiskReport
+				var err error
+
+				if !noCache {
+					if defaultSock, _, _, pErr := daemon.DefaultPaths(); pErr == nil {
+						dc := daemon.NewClient(defaultSock).WithTimeout(1 * time.Second)
+						if dc.Ping(ctx) == nil {
+							report, err = dc.Vet(ctx, cand.Ecosystem, cand.PackageName, "", false)
+						}
+					}
+				}
+
+				if report == nil {
+					report, err = vettingService.Vet(ctx, cand.Ecosystem, cand.PackageName, "")
+				}
+
+				if err != nil {
+					report = &model.RiskReport{
+						Package:         cand.PackageName,
+						Ecosystem:       cand.Ecosystem,
+						ResolvedVersion: "unknown",
+						TotalScore:      85,
+						RiskLevel:       model.RiskLevelCritical,
+						Penalties: []model.HeuristicFinding{
+							{
+								RuleID:      "HR-05A",
+								Name:        "Phantom / Unresolved Dependency",
+								Points:      85,
+								Description: fmt.Sprintf("Failed to resolve from upstream registry: %v", err),
+								Triggered:   true,
+							},
+						},
+					}
+				}
+				results <- report
+			}
+		}()
+	}
+
+	for _, cand := range candidateList {
+		jobs <- cand
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(results)
+
+	var allReports []*model.RiskReport
+	var cleanCount, warningCount, blockedCount int
+
+	for report := range results {
+		allReports = append(allReports, report)
+		switch {
+		case report.TotalScore < 30:
+			cleanCount++
+		case report.TotalScore >= threshold || report.RiskLevel == model.RiskLevelCritical:
+			blockedCount++
+		default:
+			warningCount++
+		}
+	}
+
+	summary := scanSummary{
+		TotalScanned: len(allReports),
+		CleanCount:   cleanCount,
+		WarningCount: warningCount,
+		BlockedCount: blockedCount,
+		Reports:      allReports,
+	}
+
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(summary); err != nil {
+			return fmt.Errorf("failed to encode JSON output: %w", err)
+		}
+	} else if sarifOutput {
+		sarifRep := output.SARIFReporter{Version: Version}
+		for _, rep := range allReports {
+			if rep.TotalScore >= 30 {
+				_ = sarifRep.Render(os.Stdout, rep)
+			}
+		}
+	} else {
+		renderScanSummary(os.Stdout, fmt.Sprintf("AST scan (%v)", paths), summary)
+	}
+
+	if force {
+		return nil
+	}
+
+	if blockedCount > 0 {
+		os.Exit(1)
+	}
+
+	if strictMode && warningCount > 0 {
+		os.Exit(2)
+	}
+
+	return nil
 }

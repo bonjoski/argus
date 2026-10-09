@@ -70,7 +70,7 @@ func (a *RubyGemsAdapter) FetchProvenance(ctx context.Context, pkgName, version 
 		return nil, "", fmt.Errorf("failed to create rubygems request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -130,7 +130,7 @@ func (a *RubyGemsAdapter) FetchProvenance(ctx context.Context, pkgName, version 
 	vReq, err := http.NewRequestWithContext(ctx, "GET", versionsURL, nil)
 	if err == nil {
 		vReq.Header.Set("Accept", "application/json")
-		vReq.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+		vReq.Header.Set("User-Agent", "Argus/1.0")
 		if vResp, err := a.client.Do(vReq); err == nil && vResp.StatusCode == http.StatusOK {
 			defer vResp.Body.Close()
 			var versions []rubyGemVersionItem

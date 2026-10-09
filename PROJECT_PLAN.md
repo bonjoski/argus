@@ -1,4 +1,4 @@
-# Project Plan: Argus (`vetpkg`)
+# Project Plan: Argus
 ## Pre-Flight Dependency Provenance & Slopsquatting Interceptor
 ### Hardened Architectural Specification & Adversarial Mitigation Blueprint
 
@@ -6,7 +6,7 @@
 
 ## 1. Executive Summary & Threat Model
 
-Argus (`vetpkg`) is a zero-SaaS, ecosystem-agnostic pre-flight CLI interceptor designed to inspect package provenance and halt malicious, hallucinated, or slopsquatted dependencies before package managers write them to disk or execute post-install hooks.
+Argus is a zero-SaaS, ecosystem-agnostic pre-flight CLI interceptor designed to inspect package provenance and halt malicious, hallucinated, or slopsquatted dependencies before package managers write them to disk or execute post-install hooks.
 
 ### 1.1 Threat Model & Adversarial Reality
 An adversarial review of dependency supply chain attacks demonstrates that naive heuristic scanning fails in production due to three distinct failure modes:

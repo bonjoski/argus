@@ -1,4 +1,4 @@
-# RED TEAM AUDIT: PROJECT ARGUS (`vetpkg`)
+# RED TEAM AUDIT: PROJECT ARGUS
 **Adversarial Review & Supply Chain Defense Vulnerability Analysis**  
 **Auditor:** Independent Third-Party Reviewer (AppSec & Supply Chain Architecture)  
 **Date:** September 2026  

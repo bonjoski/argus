@@ -1,4 +1,4 @@
-# Bitbucket Pipelines Template for Argus (vetpkg) Pre-Flight Dependency Scanning
+# Bitbucket Pipelines Template for Argus Pre-Flight Dependency Scanning
 # https://github.com/bonjoski/argus
 
 image: golang:1.27

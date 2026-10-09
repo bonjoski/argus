@@ -1,4 +1,4 @@
-# Session Handoff: Next Phase Execution (Argus / vetpkg)
+# Session Handoff: Next Phase Execution (Argus)
 
 **Date:** September 28, 2026  
 **Repository:** `bonjoski/argus`  
@@ -15,7 +15,7 @@
 
 ## 1. Executive Summary & Complete Architecture State
 
-Argus (`vetpkg`) is a zero-SaaS, high-performance CLI pre-flight dependency interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted packages before package managers write them to disk or execute install scripts.
+Argus is a zero-SaaS, high-performance CLI pre-flight dependency interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted packages before package managers write them to disk or execute install scripts.
 
 Phases 1, 2, and 3 have been completed with **100% test pass rate**, zero data races (`go test -race ./...`), zero security sentinel findings, zero CVE vulnerabilities (`govulncheck`), and all GitHub Actions CI checks passing across Ubuntu and macOS.
 

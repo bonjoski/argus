@@ -5,12 +5,14 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"bonjoski/argus/internal/version"
 )
 
 var (
-	Version   = "dev"
-	GitCommit = "none"
-	BuildDate = "unknown"
+	Version   = version.Version
+	GitCommit = version.GitCommit
+	BuildDate = version.BuildDate
 
 	jsonOutput  bool
 	sarifOutput bool
@@ -22,14 +24,17 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "argus",
-	Short: "Argus (vetpkg): Pre-Flight Dependency Provenance & Slopsquatting Interceptor",
+	Short: "Argus: Pre-Flight Dependency Provenance & Slopsquatting Interceptor",
 	Long: `Argus is a fast, ecosystem-agnostic, zero-SaaS CLI tool designed to inspect
 package provenance and intercept hallucinated or slopsquatted dependencies before
 they are installed by developers or autonomous AI coding agents.`,
-	Version: fmt.Sprintf("%s (commit: %s, built: %s)", Version, GitCommit, BuildDate),
+	Version: version.Formatted(),
 }
 
 func init() {
+	if Version != "" && (Version != version.Version || GitCommit != "none" || BuildDate != "unknown") {
+		rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)", Version, GitCommit, BuildDate)
+	}
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&sarifOutput, "sarif", false, "Output results in OASIS SARIF v2.1.0 format")
 	rootCmd.PersistentFlags().BoolVar(&strictMode, "strict", false, "Strict mode: fail on HIGH (>=60) risk scores in addition to CRITICAL")
@@ -38,6 +43,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&force, "force", "f", false, "Force installation even if package risk score is CRITICAL (>=80)")
 
 	rootCmd.AddCommand(newVetCmd())
+	rootCmd.AddCommand(newAddCmd())
+	rootCmd.AddCommand(newDiffCmd())
 	rootCmd.AddCommand(newScanCmd())
 	rootCmd.AddCommand(newCacheCmd())
 	rootCmd.AddCommand(newShimCmd())

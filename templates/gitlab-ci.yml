@@ -1,4 +1,4 @@
-# GitLab CI/CD Pipeline Template for Argus (vetpkg) Pre-Flight Dependency Scanning
+# GitLab CI/CD Pipeline Template for Argus Pre-Flight Dependency Scanning
 # https://github.com/bonjoski/argus
 
 stages:
@@ -6,7 +6,7 @@ stages:
   - security
 
 variables:
-  ARGUS_VERSION: "v0.5.0"
+  ARGUS_VERSION: "v0.6.0"
   ARGUS_THRESHOLD: "50"
 
 argus_dependency_scan:

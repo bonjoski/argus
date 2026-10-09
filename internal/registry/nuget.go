@@ -94,7 +94,7 @@ func (a *NuGetAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 		return nil, "", fmt.Errorf("failed to create nuget request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -130,7 +130,7 @@ func (a *NuGetAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 			pageReq, err := http.NewRequestWithContext(ctx, "GET", page.ID, nil)
 			if err == nil {
 				pageReq.Header.Set("Accept", "application/json")
-				pageReq.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+				pageReq.Header.Set("User-Agent", "Argus/1.0")
 				if pageResp, err := a.client.Do(pageReq); err == nil && pageResp.StatusCode == http.StatusOK {
 					defer pageResp.Body.Close()
 					var fetchedPage nugetRegistrationPage

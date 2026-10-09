@@ -69,7 +69,7 @@ func (a *GoModAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create @latest request: %w", err)
 		}
-		req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+		req.Header.Set("User-Agent", "Argus/1.0")
 
 		resp, err := a.client.Do(req)
 		if err != nil {
@@ -105,7 +105,7 @@ func (a *GoModAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create version info request: %w", err)
 		}
-		req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+		req.Header.Set("User-Agent", "Argus/1.0")
 
 		resp, err := a.client.Do(req)
 		if err != nil {
@@ -132,7 +132,7 @@ func (a *GoModAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 	var firstReleaseTime time.Time
 	listURL := fmt.Sprintf("%s/%s/@v/list", a.proxyURL, escapedMod)
 	if req, err := http.NewRequestWithContext(ctx, "GET", listURL, nil); err == nil {
-		req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+		req.Header.Set("User-Agent", "Argus/1.0")
 		if resp, err := a.client.Do(req); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -181,7 +181,7 @@ func (a *GoModAdapter) lookupChecksumDB(ctx context.Context, module, version str
 	if err != nil {
 		return false, ""
 	}
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -228,7 +228,7 @@ func (a *GoModAdapter) resolveVCS(ctx context.Context, module string) (string, s
 	vanityURL := fmt.Sprintf("https://%s?go-get=1", module)
 	req, err := http.NewRequestWithContext(ctx, "GET", vanityURL, nil)
 	if err == nil {
-		req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+		req.Header.Set("User-Agent", "Argus/1.0")
 		if resp, err := a.client.Do(req); err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

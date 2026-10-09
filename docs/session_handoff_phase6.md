@@ -1,4 +1,4 @@
-# Session Handoff: Next Phase Execution (Argus / vetpkg — Phase 5 Part 2 & Phase 6)
+# Session Handoff: Next Phase Execution (Argus — Phase 5 Part 2 & Phase 6)
 
 **Date:** September 28, 2026  
 **Repository:** `bonjoski/argus`  
@@ -18,7 +18,7 @@
 
 ## 1. Executive Summary & Verified Architecture State
 
-Argus (`vetpkg`) is a zero-SaaS, high-performance CLI, resident daemon, and subshell pre-flight dependency interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted dependencies before package managers write them to disk or execute install scripts.
+Argus is a zero-SaaS, high-performance CLI, resident daemon, and subshell pre-flight dependency interceptor designed to evaluate package provenance and halt malicious, hallucinated, or slopsquatted dependencies before package managers write them to disk or execute install scripts.
 
 The codebase maintains **100% test pass rate**, zero data races (`go test -race ./...`), zero security sentinel findings (`python3 scripts/sentinel_audit.py`), zero CVE vulnerabilities (`govulncheck`), and full support across **7 package ecosystems**:
 1. **NPM** (`npm`, `npx`, `pnpm`, `yarn`, `bun`)

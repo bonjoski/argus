@@ -1,4 +1,4 @@
-# GoReleaser configuration for Argus (vetpkg)
+# GoReleaser configuration for Argus
 version: 2
 
 project_name: argus
@@ -26,6 +26,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
+      - -X bonjoski/argus/internal/version.Version={{ .Version }}
+      - -X bonjoski/argus/internal/version.GitCommit={{ .Commit }}
+      - -X bonjoski/argus/internal/version.BuildDate={{ .Date }}
       - -X bonjoski/argus/internal/cli.Version={{ .Version }}
       - -X bonjoski/argus/internal/cli.GitCommit={{ .Commit }}
       - -X bonjoski/argus/internal/cli.BuildDate={{ .Date }}

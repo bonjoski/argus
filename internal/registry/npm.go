@@ -77,7 +77,7 @@ func (a *NPMAdapter) FetchProvenance(ctx context.Context, pkgName, version strin
 		return nil, "", fmt.Errorf("failed to create npm request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -174,7 +174,7 @@ func (a *NPMAdapter) fetchWeeklyDownloads(ctx context.Context, pkgName string) (
 	if err != nil {
 		return 0, err
 	}
-	req.Header.Set("User-Agent", "Argus-Vetpkg/1.0")
+	req.Header.Set("User-Agent", "Argus/1.0")
 
 	resp, err := a.client.Do(req)
 	if err != nil {

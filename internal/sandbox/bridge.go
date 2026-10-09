@@ -28,7 +28,7 @@ type Profile struct {
 	Workspace         string   `json:"workspace,omitempty"`
 	ConfigPath        string   `json:"config_path,omitempty"`
 	VetStrict         bool     `json:"vet_strict,omitempty"`
-	VetpkgPath        string   `json:"vetpkg_path,omitempty"`
+	ArgusPath         string   `json:"argus_path,omitempty"`
 	NonInteractive    bool     `json:"non_interactive,omitempty"`
 	ExtraArgs         []string `json:"extra_args,omitempty"`
 }
@@ -148,8 +148,8 @@ func (b *AirlockBridge) Run(ctx context.Context, profile *Profile, command strin
 			airlockArgs = append(airlockArgs, "--vet-strict")
 		}
 
-		if profile.VetpkgPath != "" {
-			airlockArgs = append(airlockArgs, "--vetpkg", profile.VetpkgPath)
+		if profile.ArgusPath != "" {
+			airlockArgs = append(airlockArgs, "--argus", profile.ArgusPath)
 		}
 
 		if profile.NonInteractive {
