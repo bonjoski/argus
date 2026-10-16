@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -55,9 +54,7 @@ func (kc *KillswitchCoordinator) Intercept(event *AuditEvent) error {
 
 	// 1. Process Group / PID Termination (SIGKILL)
 	if event.TargetPID > 1 {
-		// Attempt to kill process group first (-PID), fallback to single PID
-		_ = syscall.Kill(-event.TargetPID, syscall.SIGKILL)
-		_ = syscall.Kill(event.TargetPID, syscall.SIGKILL)
+		terminatePID(event.TargetPID)
 		kc.killsTriggered.Add(1)
 	}
 
