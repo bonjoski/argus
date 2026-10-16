@@ -171,7 +171,7 @@ All future work on Argus must strictly adhere to these core invariants:
 
 ```bash
 # 1. Verify working tree and CI compliance locally
-cd /Users/benskolmoski/supplychain/argus
+cd ~/supplychain/argus
 make all
 
 # 2. Run Adversarial Red Team Suite

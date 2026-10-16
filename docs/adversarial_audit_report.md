@@ -2,7 +2,7 @@
 **Adversarial Review & Supply Chain Defense Vulnerability Analysis**  
 **Auditor:** Independent Third-Party Reviewer (AppSec & Supply Chain Architecture)  
 **Date:** September 2026  
-**Target:** [`PROJECT_PLAN.md`](file:///Users/benskolmoski/supplychain/argus/PROJECT_PLAN.md) / [`README.md`](file:///Users/benskolmoski/supplychain/argus/README.md)  
+**Target:** [`PROJECT_PLAN.md`](PROJECT_PLAN.md) / [`README.md`](README.md)  
 **Verdict:** **REJECT IN INITIAL STATE / REMEDIATION REQUIRED** (Critical Architecture, Security, & Operational Deficiencies)
 
 ---

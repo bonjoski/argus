@@ -156,7 +156,7 @@ Every subsequent enhancement must preserve these fundamental invariants:
 
 ```bash
 # 1. Run complete verification gate locally
-cd /Users/benskolmoski/supplychain/argus
+cd ~/supplychain/argus
 make all
 
 # 2. Run Adversarial Red Team Suite (ADV-01..ADV-16)

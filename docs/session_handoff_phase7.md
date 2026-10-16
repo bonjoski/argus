@@ -116,7 +116,7 @@ Fold the source-level AST firewall capability directly into **Argus** as **Miles
 
 ```bash
 # 1. Switch to Argus repository
-cd /Users/benskolmoski/supplychain/argus
+cd ~/supplychain/argus
 
 # 2. Verify baseline passes cleanly
 make all
