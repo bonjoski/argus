@@ -201,7 +201,14 @@ Argus supports **11 package ecosystems** natively with dedicated ground-truth re
 
 ## 📥 Installation
 
-### 1. Pre-Built Binaries (Recommended)
+### 1. Homebrew (macOS & Linux)
+
+```bash
+brew tap bonjoski/tap
+brew install argus
+```
+
+### 2. Pre-Built Binaries (Recommended)
 
 Download the latest pre-compiled binary for your operating system and architecture from the [Releases Page](https://github.com/bonjoski/argus/releases/latest):
 
