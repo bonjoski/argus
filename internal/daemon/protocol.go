@@ -42,7 +42,7 @@ const (
 type AgentContext struct {
 	Orchestrator string `json:"orchestrator,omitempty"` // e.g. "claude-code", "cursor", "gemini-cli"
 	SessionID    string `json:"session_id,omitempty"`
-	Profile      string `json:"profile,omitempty"`      // e.g. "agent"
+	Profile      string `json:"profile,omitempty"` // e.g. "agent"
 	CommandAST   string `json:"command_ast,omitempty"`
 }
 
@@ -83,11 +83,11 @@ func (ae *AuditEvent) CEF() string {
 // OTelMap formats the audit event as an OpenTelemetry compliant resource span dictionary.
 func (ae *AuditEvent) OTelMap() map[string]any {
 	attributes := map[string]any{
-		"service.name":        "bonjoski-" + ae.Source,
-		"event.name":          ae.EventType,
-		"event.severity":      string(ae.Severity),
-		"event.timestamp":     ae.Timestamp.Format(time.RFC3339Nano),
-		"security.source":     ae.Source,
+		"service.name":    "bonjoski-" + ae.Source,
+		"event.name":      ae.EventType,
+		"event.severity":  string(ae.Severity),
+		"event.timestamp": ae.Timestamp.Format(time.RFC3339Nano),
+		"security.source": ae.Source,
 	}
 	if ae.TargetPID > 0 {
 		attributes["process.pid"] = ae.TargetPID

@@ -14,25 +14,25 @@ import (
 
 // TelemetryBusOptions configures the in-memory telemetry ring buffer.
 type TelemetryBusOptions struct {
-	Capacity       int
-	LogSinkPath    string
-	LocksmithSock  string
-	FlushInterval  time.Duration
+	Capacity      int
+	LogSinkPath   string
+	LocksmithSock string
+	FlushInterval time.Duration
 }
 
 // TelemetryBus provides non-blocking, lock-free ingestion for high-throughput
 // security and operational telemetry streams from Airlock, Locksmith, and Aegisbox.
 type TelemetryBus struct {
-	mu             sync.Mutex
-	opts           TelemetryBusOptions
-	ch             chan *AuditEvent
-	killswitch     *KillswitchCoordinator
-	totalIngested  atomic.Int64
-	droppedEvents  atomic.Int64
-	logFile        io.WriteCloser
-	stopCh         chan struct{}
-	workerDone     chan struct{}
-	closed         bool
+	mu            sync.Mutex
+	opts          TelemetryBusOptions
+	ch            chan *AuditEvent
+	killswitch    *KillswitchCoordinator
+	totalIngested atomic.Int64
+	droppedEvents atomic.Int64
+	logFile       io.WriteCloser
+	stopCh        chan struct{}
+	workerDone    chan struct{}
+	closed        bool
 }
 
 // NewTelemetryBus initializes an ingestion bus and starts the background sink drainer.
