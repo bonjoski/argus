@@ -6,7 +6,7 @@ stages:
   - security
 
 variables:
-  ARGUS_VERSION: "v0.6.0"
+  ARGUS_VERSION: "v0.7.0"
   ARGUS_THRESHOLD: "50"
 
 argus_dependency_scan:
