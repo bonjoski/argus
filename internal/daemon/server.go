@@ -22,6 +22,7 @@ type Server struct {
 	socketPath    string
 	pidPath       string
 	service       *service.VettingService
+	telemetryBus  *TelemetryBus
 	listener      net.Listener
 	startTime     time.Time
 	totalRequests atomic.Int64
@@ -36,11 +37,12 @@ type Server struct {
 // NewServer initializes a new resident daemon server.
 func NewServer(socketPath, pidPath string, vettingService *service.VettingService) *Server {
 	return &Server{
-		socketPath: socketPath,
-		pidPath:    pidPath,
-		service:    vettingService,
-		startTime:  time.Now(),
-		shutdownCh: make(chan struct{}),
+		socketPath:   socketPath,
+		pidPath:      pidPath,
+		service:      vettingService,
+		telemetryBus: NewTelemetryBus(),
+		startTime:    time.Now(),
+		shutdownCh:   make(chan struct{}),
 	}
 }
 
@@ -226,6 +228,26 @@ func (s *Server) processRequest(req Request) Response {
 			LatencyMs: time.Since(start).Milliseconds(),
 		}
 
+	case ActionTelemetryIngest:
+		if req.Telemetry == nil {
+			return Response{
+				Success: false,
+				Error:   "telemetry payload is required for telemetry_ingest action",
+			}
+		}
+		if s.telemetryBus != nil {
+			if err := s.telemetryBus.Ingest(req.Telemetry); err != nil {
+				return Response{
+					Success: false,
+					Error:   err.Error(),
+				}
+			}
+		}
+		return Response{
+			Success:   true,
+			LatencyMs: time.Since(start).Milliseconds(),
+		}
+
 	default:
 		return Response{
 			Success: false,
@@ -279,7 +301,16 @@ func (s *Server) Close() error {
 				closeErr = err
 			}
 		}
+
+		if s.telemetryBus != nil {
+			_ = s.telemetryBus.Close()
+		}
 	})
 
 	return closeErr
+}
+
+// TelemetryBus returns the server's telemetry ingestion bus.
+func (s *Server) TelemetryBus() *TelemetryBus {
+	return s.telemetryBus
 }
