@@ -95,8 +95,8 @@ bench: ## Run performance and latency benchmarks with memory allocation metrics
 sentinel: ## Run the Adversarial Architecture & Security Sentinel audit scanner
 	@if [ -f scripts/sentinel_audit.py ]; then \
 		python3 scripts/sentinel_audit.py --path .; \
-	elif [ -f /Users/benskolmoski/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py ]; then \
-		python3 /Users/benskolmoski/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py --path .; \
+	elif [ -f "$$HOME/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py" ]; then \
+		python3 "$$HOME/.super.engineering/hooks/antigravity-customization/.agents/skills/adversarial-sentinel/scripts/sentinel_audit.py" --path .; \
 	else \
 		echo "Notice: sentinel_audit.py not found, skipping."; \
 	fi
