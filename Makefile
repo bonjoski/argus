@@ -10,7 +10,7 @@ PKG         := bonjoski/argus
 CMD_DIR     := ./cmd/argus
 
 # Build Metadata Variables
-VERSION     ?= $(shell tr -d '\r\n' < VERSION 2>/dev/null || echo "v0.7.0")
+VERSION     ?= $(shell tr -d '\r\n' < VERSION 2>/dev/null || echo "v0.8.0")
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 BUILD_DATE  ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 
