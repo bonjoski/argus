@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,11 +49,12 @@ and verifies provenance before commit.`,
 }
 
 type diffSummary struct {
-	TotalScanned int                 `json:"total_scanned"`
-	CleanCount   int                 `json:"clean_count"`
-	WarningCount int                 `json:"warning_count"`
-	BlockedCount int                 `json:"blocked_count"`
-	Reports      []*model.RiskReport `json:"reports"`
+	TotalScanned   int                      `json:"total_scanned"`
+	CleanCount     int                      `json:"clean_count"`
+	WarningCount   int                      `json:"warning_count"`
+	BlockedCount   int                      `json:"blocked_count"`
+	WeaponizedDiff *gitdiff.DiffAuditReport `json:"weaponized_diff,omitempty"`
+	Reports        []*model.RiskReport      `json:"reports"`
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
@@ -66,14 +68,39 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	candidates, err := gitdiff.InspectDiff(ctx, nil, workDir, diffCached)
+	runner := gitdiff.NewExecGitRunner()
+	changedFiles, _ := runner.ChangedFiles(ctx, workDir, diffCached)
+	rawDiff, _ := runner.Diff(ctx, workDir, diffCached)
+
+	auditor := gitdiff.NewSemanticDiffAuditor(workDir)
+	weaponReport, _ := auditor.AuditFiles(ctx, workDir, changedFiles)
+	if len(rawDiff) > 0 {
+		if streamReport, sErr := auditor.AuditDiffStream(bytes.NewReader(rawDiff)); sErr == nil && streamReport != nil {
+			seen := make(map[string]bool)
+			for _, f := range weaponReport.Findings {
+				seen[f.File+":"+f.Category] = true
+			}
+			for _, f := range streamReport.Findings {
+				key := f.File + ":" + f.Category
+				if !seen[key] {
+					seen[key] = true
+					weaponReport.Findings = append(weaponReport.Findings, f)
+					if f.Severity == gitdiff.DiffSeverityCritical || f.Severity == gitdiff.DiffSeverityHigh {
+						weaponReport.Allowed = false
+					}
+				}
+			}
+		}
+	}
+
+	candidates, err := gitdiff.InspectDiff(ctx, runner, workDir, diffCached)
 	if err != nil {
 		return fmt.Errorf("failed to inspect git diff: %w", err)
 	}
 
-	if len(candidates) == 0 {
+	if len(candidates) == 0 && len(weaponReport.Findings) == 0 {
 		if jsonOutput {
-			summary := diffSummary{TotalScanned: 0, Reports: []*model.RiskReport{}}
+			summary := diffSummary{TotalScanned: 0, WeaponizedDiff: weaponReport, Reports: []*model.RiskReport{}}
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			return enc.Encode(summary)
@@ -82,7 +109,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		if diffCached {
 			modeStr = "staged"
 		}
-		fmt.Printf("✔ No new third-party imports detected in %s git diff.\n", modeStr)
+		fmt.Printf("✔ No new third-party imports or weaponized diff patterns detected in %s git diff.\n", modeStr)
 		return nil
 	}
 
@@ -195,11 +222,12 @@ func runDiff(cmd *cobra.Command, args []string) error {
 	}
 
 	summary := diffSummary{
-		TotalScanned: len(allReports),
-		CleanCount:   cleanCount,
-		WarningCount: warningCount,
-		BlockedCount: blockedCount,
-		Reports:      allReports,
+		TotalScanned:   len(allReports),
+		CleanCount:     cleanCount,
+		WarningCount:   warningCount,
+		BlockedCount:   blockedCount,
+		WeaponizedDiff: weaponReport,
+		Reports:        allReports,
 	}
 
 	if jsonOutput {
@@ -227,7 +255,7 @@ func runDiff(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if blockedCount > 0 {
+	if !weaponReport.Allowed || blockedCount > 0 {
 		os.Exit(1)
 	}
 
@@ -250,6 +278,15 @@ func renderDiffSummary(w *os.File, modeStr string, s diffSummary, candidates map
 		lipgloss.NewStyle().Bold(true).Render(modeStr),
 		s.TotalScanned,
 	)
+
+	if s.WeaponizedDiff != nil && len(s.WeaponizedDiff.Findings) > 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("🚨 Weaponized Diff Traps Detected:"))
+		for _, f := range s.WeaponizedDiff.Findings {
+			badge := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("[" + string(f.Severity) + "]")
+			fmt.Fprintf(w, "  • %s %s (%s): %s\n", badge, f.File, f.Category, f.Description)
+		}
+		fmt.Fprintln(w)
+	}
 
 	fmt.Fprintf(w, "  ✔ Clean / Verified:  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render(fmt.Sprintf("%d", s.CleanCount)))
 	if s.WarningCount > 0 {

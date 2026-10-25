@@ -1,22 +1,28 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
-	"io"
-	"net/http"
-	"path/filepath"
-
+	"bonjoski/argus/internal/ast"
 	"bonjoski/argus/internal/cache"
 	"bonjoski/argus/internal/daemon"
+	"bonjoski/argus/internal/gitdiff"
 	"bonjoski/argus/internal/heuristics"
+	"bonjoski/argus/internal/lockfile"
 	"bonjoski/argus/internal/model"
 	"bonjoski/argus/internal/output"
 	"bonjoski/argus/internal/policy"
@@ -30,20 +36,33 @@ var (
 	vetSanitize   bool
 	vetQuarantine bool
 	vetSandbox    bool
+	vetLockfile   string
+	vetDiff       bool
+	vetCached     bool
 )
 
 func newVetCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "vet <ecosystem> <package>[@version]",
-		Short: "Inspect provenance and compute risk score for a package",
+		Use:   "vet [<ecosystem> <package>[@version]]",
+		Short: "Inspect package provenance, audit lockfiles, or inspect git diffs for hallucinated packages and weaponized traps",
 		Example: `  argus vet npm express
   argus vet npm @angular/core@17.0.0
   argus vet pypi requests
-  argus vet pypi langchain-super-tool --strict
-  argus vet npm malicious-pkg --quarantine --sanitize`,
-		Args: cobra.ExactArgs(2),
+  argus vet --lockfile package-lock.json
+  argus vet --lockfile Cargo.lock --strict
+  argus vet --lockfile go.sum
+  argus vet --lockfile
+  argus vet --diff
+  argus vet --diff --cached
+  argus vet --diff ./workspace --json`,
+		Args: cobra.ArbitraryArgs,
 		RunE: runVet,
 	}
+
+	cmd.Flags().StringVar(&vetLockfile, "lockfile", "", "Audit lockfile for hallucinated packages and integrity tampering")
+	cmd.Flags().Lookup("lockfile").NoOptDefVal = "auto"
+	cmd.Flags().BoolVar(&vetDiff, "diff", false, "Inspect git diff (working tree or staged) to catch hallucinated package names and weaponized diffs")
+	cmd.Flags().BoolVar(&vetCached, "cached", false, "Inspect staged changes (git diff --cached)")
 
 	cmd.Flags().BoolVar(&vetSanitize, "sanitize", false, "Download and neutralize lifecycle scripts from package archive")
 	cmd.Flags().BoolVar(&vetQuarantine, "quarantine", false, "Download and store package archive in Quarantine Store")
@@ -72,6 +91,25 @@ func parsePackageSpec(spec string) (name, version string) {
 }
 
 func runVet(cmd *cobra.Command, args []string) error {
+	// 1. Dispatch --lockfile
+	if vetLockfile != "" {
+		targetFile := vetLockfile
+		if targetFile == "auto" && len(args) > 0 {
+			targetFile = args[0]
+		}
+		return runVetLockfile(cmd, targetFile)
+	}
+
+	// 2. Dispatch --diff
+	if vetDiff {
+		return runVetDiff(cmd, args)
+	}
+
+	// 3. Fallback to package-specific vetting: requires exactly 2 args
+	if len(args) != 2 {
+		return fmt.Errorf("accepts 2 arg(s), received %d (Usage: argus vet <ecosystem> <package>[@version], or pass --lockfile / --diff)", len(args))
+	}
+
 	ecoStr := strings.ToLower(args[0])
 	var eco model.Ecosystem
 	switch ecoStr {
@@ -142,7 +180,6 @@ func runVet(cmd *cobra.Command, args []string) error {
 
 	// Fallback to in-process service if daemon was not active or did not provide report
 	if report == nil {
-		// Initialize Cache Store
 		var cacheStore cache.Store
 		if !noCache {
 			dbPath, cErr := cache.DefaultCachePath()
@@ -154,9 +191,7 @@ func runVet(cmd *cobra.Command, args []string) error {
 			defer cacheStore.Close()
 		}
 
-		// Initialize Adapters
 		adapters := registry.DefaultAdapters()
-
 		vcsVerifier := vcs.NewHTTPVerifier(nil)
 		evaluator := heuristics.DefaultEngine()
 		vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
@@ -235,10 +270,8 @@ func runVet(cmd *cobra.Command, args []string) error {
 	if isInteractive {
 		switch {
 		case report.TotalScore < 30:
-			// Score < 30: Clean (Green) -> proceed cleanly
 			return nil
 		case report.TotalScore >= 30 && report.TotalScore < 80:
-			// Score 30 - 79: Suspicious (Yellow) -> prompt [y/N] confirmation in interactive TTY
 			fmt.Printf("\n⚠ Package risk score is %d/100 (Suspicious). Proceed with installation? [y/N]: ", report.TotalScore)
 			var response string
 			if _, err := fmt.Scanln(&response); err != nil {
@@ -252,7 +285,6 @@ func runVet(cmd *cobra.Command, args []string) error {
 			fmt.Println("Installation aborted by user.")
 			os.Exit(1)
 		default:
-			// Score >= 80: Critical Threat (Red) -> hard block; requires --force
 			if force {
 				fmt.Printf("\n⚡ Warning: Critical threat (%d/100) overridden with --force. Proceeding.\n", report.TotalScore)
 				return nil
@@ -276,4 +308,546 @@ func runVet(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// runVetLockfile audits a project lockfile for unpinned/tampered checksums and hallucinated packages.
+func runVetLockfile(cmd *cobra.Command, filePath string) error {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if filePath == "auto" || filePath == "" {
+		detectedPath, err := lockfile.FindLockfile(".")
+		if err != nil {
+			return fmt.Errorf("no lockfile detected in current directory; specify with --lockfile=<path>: %w", err)
+		}
+		filePath = detectedPath
+	}
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open lockfile %s: %w", filePath, err)
+	}
+	defer f.Close()
+
+	parser, eco, err := lockfile.Detect(filePath)
+	if err != nil {
+		return fmt.Errorf("lockfile format detection failed for %s: %w", filePath, err)
+	}
+
+	deps, err := parser.Parse(f)
+	if err != nil {
+		return fmt.Errorf("lockfile parsing failed: %w", err)
+	}
+
+	if len(deps) == 0 {
+		if jsonOutput {
+			summary := map[string]interface{}{
+				"lockfile":       filePath,
+				"total_packages": 0,
+				"allowed":        true,
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(summary)
+		}
+		fmt.Printf("✔ Notice: No external dependencies declared in %s.\n", filePath)
+		return nil
+	}
+
+	// 1. Checksum & Integrity Audit using synchronized engine
+	validator := lockfile.NewLockfileValidator(nil)
+	integrityReport := validator.AuditLockedDependencies(deps)
+
+	// 2. Concurrently vet all dependencies for hallucination / slopsquatting
+	var cacheStore cache.Store
+	if !noCache {
+		dbPath, cErr := cache.DefaultCachePath()
+		if cErr == nil {
+			cacheStore, _ = cache.NewSQLiteStore(dbPath)
+		}
+	}
+	if cacheStore != nil {
+		defer cacheStore.Close()
+	}
+
+	adapters := registry.DefaultAdapters()
+	vcsVerifier := vcs.NewHTTPVerifier(nil)
+	evaluator := heuristics.DefaultEngine()
+	vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
+
+	const workerCount = 5
+	jobs := make(chan lockfile.LockedDependency, len(deps))
+	results := make(chan *model.RiskReport, len(deps))
+
+	var wg sync.WaitGroup
+	for w := 0; w < workerCount; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for dep := range jobs {
+				targetEco := dep.Ecosystem
+				if targetEco == "" {
+					targetEco = eco
+				}
+
+				var rep *model.RiskReport
+				var vErr error
+
+				if !noCache {
+					if defaultSock, _, _, pErr := daemon.DefaultPaths(); pErr == nil {
+						dc := daemon.NewClient(defaultSock).WithTimeout(1 * time.Second)
+						if dc.Ping(ctx) == nil {
+							rep, vErr = dc.Vet(ctx, targetEco, dep.Name, dep.Version, false)
+						}
+					}
+				}
+
+				if rep == nil {
+					rep, vErr = vettingService.Vet(ctx, targetEco, dep.Name, dep.Version)
+				}
+
+				if vErr != nil {
+					rep = &model.RiskReport{
+						Package:         dep.Name,
+						Ecosystem:       targetEco,
+						ResolvedVersion: dep.Version,
+						TotalScore:      85,
+						RiskLevel:       model.RiskLevelCritical,
+						Penalties: []model.HeuristicFinding{
+							{
+								RuleID:      "HR-05A",
+								Name:        "Phantom / Hallucinated Package",
+								Points:      85,
+								Description: fmt.Sprintf("Failed to resolve %s package %q from authoritative registry (potential hallucinated package / slopsquat): %v", targetEco, dep.Name, vErr),
+								Triggered:   true,
+							},
+						},
+					}
+				}
+				results <- rep
+			}
+		}()
+	}
+
+	for _, d := range deps {
+		jobs <- d
+	}
+	close(jobs)
+
+	wg.Wait()
+	close(results)
+
+	var allReports []*model.RiskReport
+	var cleanCount, warningCount, blockedCount int
+
+	for rep := range results {
+		allReports = append(allReports, rep)
+		switch {
+		case rep.TotalScore < 30:
+			cleanCount++
+		case rep.TotalScore >= threshold || rep.RiskLevel == model.RiskLevelCritical:
+			blockedCount++
+		default:
+			warningCount++
+		}
+	}
+
+	// Add tampered dependencies to blocked count
+	if integrityReport.TamperedCount > 0 {
+		blockedCount += integrityReport.TamperedCount
+	}
+
+	summary := struct {
+		Lockfile     string                        `json:"lockfile"`
+		TotalScanned int                           `json:"total_scanned"`
+		CleanCount   int                           `json:"clean_count"`
+		WarningCount int                           `json:"warning_count"`
+		BlockedCount int                           `json:"blocked_count"`
+		Integrity    *lockfile.LockfileAuditReport `json:"integrity_audit"`
+		Reports      []*model.RiskReport           `json:"reports"`
+	}{
+		Lockfile:     filePath,
+		TotalScanned: len(allReports),
+		CleanCount:   cleanCount,
+		WarningCount: warningCount,
+		BlockedCount: blockedCount,
+		Integrity:    integrityReport,
+		Reports:      allReports,
+	}
+
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(summary); err != nil {
+			return fmt.Errorf("failed to encode JSON output: %w", err)
+		}
+	} else if sarifOutput {
+		sarifRep := output.SARIFReporter{Version: Version}
+		for _, rep := range allReports {
+			if rep.TotalScore >= 30 {
+				_ = sarifRep.Render(os.Stdout, rep)
+			}
+		}
+	} else {
+		renderLockfileSummary(os.Stdout, filePath, summary.TotalScanned, cleanCount, warningCount, blockedCount, integrityReport, allReports)
+	}
+
+	if force {
+		return nil
+	}
+
+	if blockedCount > 0 {
+		os.Exit(1)
+	}
+
+	if strictMode && warningCount > 0 {
+		os.Exit(2)
+	}
+
+	return nil
+}
+
+func renderLockfileSummary(w *os.File, filePath string, total, clean, warning, blocked int, integrity *lockfile.LockfileAuditReport, reports []*model.RiskReport) {
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FAFAFA")).
+		Background(lipgloss.Color("#5A56E0")).
+		Padding(0, 1)
+
+	fmt.Fprintf(w, "%s %s (%d packages verified)\n\n",
+		headerStyle.Render("ARGUS LOCKFILE VET"),
+		lipgloss.NewStyle().Bold(true).Render(filePath),
+		total,
+	)
+
+	fmt.Fprintf(w, "  ✔ Clean / Verified:  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render(fmt.Sprintf("%d", clean)))
+	if warning > 0 {
+		fmt.Fprintf(w, "  ⚠ Suspicious:        %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD535")).Render(fmt.Sprintf("%d", warning)))
+	}
+	if blocked > 0 {
+		fmt.Fprintf(w, "  ⛔ Hard Blocked:      %s\n", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render(fmt.Sprintf("%d", blocked)))
+	}
+	if integrity != nil && integrity.TamperedCount > 0 {
+		fmt.Fprintf(w, "  ☣️  Tampered Hashes:   %s\n", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render(fmt.Sprintf("%d", integrity.TamperedCount)))
+	}
+	fmt.Fprintln(w)
+
+	if warning > 0 || blocked > 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Underline(true).Render("Flagged Dependencies / Integrity Findings:"))
+		for _, r := range reports {
+			if r.TotalScore >= 30 {
+				color := "#FCD535"
+				if r.TotalScore >= 80 {
+					color = "#F8312F"
+				}
+				badge := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(color)).Render(fmt.Sprintf("[%d/100 %s]", r.TotalScore, r.RiskLevel))
+				fmt.Fprintf(w, "  • %-32s %s\n", fmt.Sprintf("[%s] %s@%s", r.Ecosystem, r.Package, r.ResolvedVersion), badge)
+				for _, p := range r.Penalties {
+					if p.Triggered {
+						fmt.Fprintf(w, "      [+%2d] %s (%s)\n", p.Points, p.Name, p.RuleID)
+					}
+				}
+			}
+		}
+		if integrity != nil {
+			for _, t := range integrity.TamperedDeps {
+				fmt.Fprintf(w, "  • %-32s %s\n", fmt.Sprintf("[%s] %s@%s", t.Dependency.Ref.Ecosystem, t.Dependency.Ref.Name, t.Dependency.Ref.Version), lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("[CHECKSUM TAMPER]"))
+				fmt.Fprintf(w, "      Reason: %s\n", t.Reason)
+			}
+		}
+		fmt.Fprintln(w)
+	}
+
+	if blocked == 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render("✔ Lockfile verified: 0 hallucinated packages, all cryptographic checksums valid."))
+	} else {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("⛔ Pre-flight lockfile inspection failed: Hallucinated dependencies or integrity tampering detected."))
+	}
+}
+
+// runVetDiff audits git diff for weaponized execution traps and hallucinated import dependencies.
+func runVetDiff(cmd *cobra.Command, args []string) error {
+	workDir := ""
+	if len(args) > 0 {
+		workDir = args[0]
+	}
+
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	runner := gitdiff.NewExecGitRunner()
+
+	// 1. Retrieve raw diff and changed file names
+	rawDiff, diffErr := runner.Diff(ctx, workDir, vetCached)
+	changedFiles, _ := runner.ChangedFiles(ctx, workDir, vetCached)
+
+	if diffErr != nil && len(rawDiff) == 0 && len(changedFiles) == 0 {
+		return fmt.Errorf("failed to retrieve git diff in %q: %w", workDir, diffErr)
+	}
+
+	// 2. Weaponized Diff Auditing (SemanticDiffAuditor)
+	auditor := gitdiff.NewSemanticDiffAuditor(workDir)
+	weaponReport, _ := auditor.AuditFiles(ctx, workDir, changedFiles)
+	if len(rawDiff) > 0 {
+		if streamReport, err := auditor.AuditDiffStream(bytes.NewReader(rawDiff)); err == nil && streamReport != nil {
+			seen := make(map[string]bool)
+			for _, f := range weaponReport.Findings {
+				seen[f.File+":"+f.Category] = true
+			}
+			for _, f := range streamReport.Findings {
+				key := f.File + ":" + f.Category
+				if !seen[key] {
+					seen[key] = true
+					weaponReport.Findings = append(weaponReport.Findings, f)
+					if f.Severity == gitdiff.DiffSeverityCritical || f.Severity == gitdiff.DiffSeverityHigh {
+						weaponReport.Allowed = false
+					}
+				}
+			}
+		}
+	}
+
+	// 3. Hallucinated Imports Auditing
+	var candidates []ast.ImportCandidate
+	if len(rawDiff) > 0 {
+		var extractErr error
+		candidates, extractErr = gitdiff.ExtractImportsFromDiff(bytes.NewReader(rawDiff))
+		if extractErr != nil {
+			return fmt.Errorf("failed to extract imports from git diff: %w", extractErr)
+		}
+	}
+
+	candidateMap := make(map[string]ast.ImportCandidate)
+	for _, cand := range candidates {
+		key := fmt.Sprintf("%s:%s", cand.Ecosystem, cand.PackageName)
+		if _, exists := candidateMap[key]; !exists {
+			candidateMap[key] = cand
+		}
+	}
+
+	var uniqueCandidates []ast.ImportCandidate
+	for _, cand := range candidateMap {
+		uniqueCandidates = append(uniqueCandidates, cand)
+	}
+
+	var cacheStore cache.Store
+	if !noCache {
+		dbPath, cErr := cache.DefaultCachePath()
+		if cErr == nil {
+			cacheStore, _ = cache.NewSQLiteStore(dbPath)
+		}
+	}
+	if cacheStore != nil {
+		defer cacheStore.Close()
+	}
+
+	adapters := registry.DefaultAdapters()
+	vcsVerifier := vcs.NewHTTPVerifier(nil)
+	evaluator := heuristics.DefaultEngine()
+	vettingService := service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
+
+	var allImportReports []*model.RiskReport
+	var cleanCount, warningCount, blockedCount int
+
+	if len(uniqueCandidates) > 0 {
+		const workerCount = 5
+		jobs := make(chan ast.ImportCandidate, len(uniqueCandidates))
+		results := make(chan *model.RiskReport, len(uniqueCandidates))
+
+		var wg sync.WaitGroup
+		for w := 0; w < workerCount; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for cand := range jobs {
+					var rep *model.RiskReport
+					var vErr error
+
+					if !noCache {
+						if defaultSock, _, _, pErr := daemon.DefaultPaths(); pErr == nil {
+							dc := daemon.NewClient(defaultSock).WithTimeout(1 * time.Second)
+							if dc.Ping(ctx) == nil {
+								rep, vErr = dc.Vet(ctx, cand.Ecosystem, cand.PackageName, "", false)
+							}
+						}
+					}
+
+					if rep == nil {
+						rep, vErr = vettingService.Vet(ctx, cand.Ecosystem, cand.PackageName, "")
+					}
+
+					if vErr != nil {
+						rep = &model.RiskReport{
+							Package:         cand.PackageName,
+							Ecosystem:       cand.Ecosystem,
+							ResolvedVersion: "phantom",
+							TotalScore:      85,
+							RiskLevel:       model.RiskLevelCritical,
+							Penalties: []model.HeuristicFinding{
+								{
+									RuleID:      "HR-05A",
+									Name:        "Phantom / Hallucinated Package",
+									Points:      85,
+									Description: fmt.Sprintf("Failed to resolve %s package %q from authoritative registry (slopsquat / hallucinated package): %v", cand.Ecosystem, cand.PackageName, vErr),
+									Triggered:   true,
+								},
+							},
+						}
+					}
+					results <- rep
+				}
+			}()
+		}
+
+		for _, cand := range uniqueCandidates {
+			jobs <- cand
+		}
+		close(jobs)
+
+		wg.Wait()
+		close(results)
+
+		for rep := range results {
+			allImportReports = append(allImportReports, rep)
+			switch {
+			case rep.TotalScore < 30:
+				cleanCount++
+			case rep.TotalScore >= threshold || rep.RiskLevel == model.RiskLevelCritical:
+				blockedCount++
+			default:
+				warningCount++
+			}
+		}
+	}
+
+	weaponizedBlocked := !weaponReport.Allowed
+	overallAllowed := !weaponizedBlocked && blockedCount == 0
+
+	modeStr := "working tree changes"
+	if vetCached {
+		modeStr = "staged changes (--cached)"
+	}
+
+	if jsonOutput {
+		summary := struct {
+			Mode           string                   `json:"mode"`
+			Allowed        bool                     `json:"allowed"`
+			WeaponizedDiff *gitdiff.DiffAuditReport `json:"weaponized_diff"`
+			TotalImports   int                      `json:"total_imports"`
+			CleanImports   int                      `json:"clean_imports"`
+			WarningImports int                      `json:"warning_imports"`
+			BlockedImports int                      `json:"blocked_imports"`
+			ImportReports  []*model.RiskReport      `json:"import_reports"`
+		}{
+			Mode:           modeStr,
+			Allowed:        overallAllowed,
+			WeaponizedDiff: weaponReport,
+			TotalImports:   len(allImportReports),
+			CleanImports:   cleanCount,
+			WarningImports: warningCount,
+			BlockedImports: blockedCount,
+			ImportReports:  allImportReports,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(summary)
+	}
+
+	if sarifOutput {
+		sarifRep := output.SARIFReporter{Version: Version}
+		for _, rep := range allImportReports {
+			if rep.TotalScore >= 30 {
+				_ = sarifRep.Render(os.Stdout, rep)
+			}
+		}
+	} else {
+		renderDiffVetSummary(os.Stdout, modeStr, weaponReport, len(allImportReports), cleanCount, warningCount, blockedCount, allImportReports, candidateMap)
+	}
+
+	if force {
+		return nil
+	}
+
+	if weaponizedBlocked || blockedCount > 0 {
+		os.Exit(1)
+	}
+
+	if strictMode && warningCount > 0 {
+		os.Exit(2)
+	}
+
+	return nil
+}
+
+func renderDiffVetSummary(w *os.File, modeStr string, weaponReport *gitdiff.DiffAuditReport, totalImports, clean, warning, blocked int, reports []*model.RiskReport, candidates map[string]ast.ImportCandidate) {
+	headerStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FAFAFA")).
+		Background(lipgloss.Color("#5A56E0")).
+		Padding(0, 1)
+
+	fmt.Fprintf(w, "%s %s\n\n",
+		headerStyle.Render("ARGUS PRE-FLIGHT DIFF VET"),
+		lipgloss.NewStyle().Bold(true).Render(modeStr),
+	)
+
+	// Section 1: Weaponized Diff Findings
+	if len(weaponReport.Findings) > 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("🚨 Weaponized Diff Traps Detected:"))
+		for _, f := range weaponReport.Findings {
+			badge := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("[" + string(f.Severity) + "]")
+			fmt.Fprintf(w, "  • %s %s (%s): %s\n", badge, f.File, f.Category, f.Description)
+		}
+		fmt.Fprintln(w)
+	} else {
+		fmt.Fprintln(w, lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render("  ✔ No weaponized diff execution traps detected."))
+	}
+
+	// Section 2: Hallucinated / New Imports
+	fmt.Fprintf(w, "\n%s (%d imports analyzed)\n", lipgloss.NewStyle().Bold(true).Render("Third-Party Source Imports:"), totalImports)
+	fmt.Fprintf(w, "  ✔ Clean / Verified:  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render(fmt.Sprintf("%d", clean)))
+	if warning > 0 {
+		fmt.Fprintf(w, "  ⚠ Suspicious:        %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD535")).Render(fmt.Sprintf("%d", warning)))
+	}
+	if blocked > 0 {
+		fmt.Fprintf(w, "  ⛔ Hard Blocked:      %s\n", lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render(fmt.Sprintf("%d", blocked)))
+	}
+	fmt.Fprintln(w)
+
+	if warning > 0 || blocked > 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Underline(true).Render("Flagged Import Additions:"))
+		for _, r := range reports {
+			if r.TotalScore >= 30 {
+				color := "#FCD535"
+				if r.TotalScore >= 80 {
+					color = "#F8312F"
+				}
+				badge := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(color)).Render(fmt.Sprintf("[%d/100 %s]", r.TotalScore, r.RiskLevel))
+
+				fileLocation := ""
+				key := fmt.Sprintf("%s:%s", r.Ecosystem, r.Package)
+				if cand, ok := candidates[key]; ok && cand.FilePath != "" {
+					fileLocation = fmt.Sprintf(" (%s:%d)", cand.FilePath, cand.LineNumber)
+				}
+
+				fmt.Fprintf(w, "  • %-32s %s%s\n", fmt.Sprintf("[%s] %s", r.Ecosystem, r.Package), badge, fileLocation)
+				for _, p := range r.Penalties {
+					if p.Triggered {
+						fmt.Fprintf(w, "      [+%2d] %s (%s)\n", p.Points, p.Name, p.RuleID)
+					}
+				}
+			}
+		}
+		fmt.Fprintln(w)
+	}
+
+	if weaponReport.Allowed && blocked == 0 {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D26A")).Render("✔ Pre-flight diff inspection passed: 0 weaponized traps, all imports verified."))
+	} else {
+		fmt.Fprintln(w, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("⛔ Pre-flight diff inspection failed: Weaponized diff traps or hallucinated dependencies detected before microVM dispatch."))
+	}
 }

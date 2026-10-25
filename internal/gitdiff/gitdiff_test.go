@@ -81,10 +81,18 @@ index 333..444 100644
 
 type mockGitRunner struct {
 	diffData []byte
+	files    []string
 }
 
 func (m *mockGitRunner) Diff(ctx context.Context, workDir string, cached bool) ([]byte, error) {
 	return m.diffData, nil
+}
+
+func (m *mockGitRunner) ChangedFiles(ctx context.Context, workDir string, cached bool) ([]string, error) {
+	if m.files != nil {
+		return m.files, nil
+	}
+	return []string{"script.py"}, nil
 }
 
 func TestInspectDiffWithMockRunner(t *testing.T) {

@@ -1,10 +1,12 @@
 package gitdiff
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"bonjoski/argus/internal/ast"
 )
@@ -12,6 +14,7 @@ import (
 // GitRunner abstracts the execution of git commands (SOLID Dependency Inversion).
 type GitRunner interface {
 	Diff(ctx context.Context, workDir string, cached bool) ([]byte, error)
+	ChangedFiles(ctx context.Context, workDir string, cached bool) ([]string, error)
 }
 
 // ExecGitRunner executes real git CLI commands on the local machine.
@@ -40,6 +43,34 @@ func (r *ExecGitRunner) Diff(ctx context.Context, workDir string, cached bool) (
 	}
 
 	return out, nil
+}
+
+// ChangedFiles lists paths of files added, modified, or deleted in the working tree or index.
+func (r *ExecGitRunner) ChangedFiles(ctx context.Context, workDir string, cached bool) ([]string, error) {
+	args := []string{"diff", "--name-only"}
+	if cached {
+		args = append(args, "--cached")
+	}
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed executing git diff --name-only: %w", err)
+	}
+
+	var files []string
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		text := strings.TrimSpace(scanner.Text())
+		if text != "" {
+			files = append(files, text)
+		}
+	}
+	return files, nil
 }
 
 // InspectDiff extracts new import dependencies using the provided GitRunner.
