@@ -63,16 +63,16 @@ type npmAttestationDoc struct {
 }
 
 type npmVersionDoc struct {
-	Name        string              `json:"name"`
-	Version     string              `json:"version"`
-	Description string              `json:"description"`
-	Scripts     map[string]string   `json:"scripts"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version"`
+	Description string            `json:"description"`
+	Scripts     map[string]string `json:"scripts"`
 	Dist        struct {
-		Integrity    string              `json:"integrity"`
-		Shasum       string              `json:"shasum"`
-		Tarball      string              `json:"tarball"`
-		Signatures   []any               `json:"signatures"`
-		Attestations *npmAttestationDoc  `json:"attestations"`
+		Integrity    string             `json:"integrity"`
+		Shasum       string             `json:"shasum"`
+		Tarball      string             `json:"tarball"`
+		Signatures   []any              `json:"signatures"`
+		Attestations *npmAttestationDoc `json:"attestations"`
 	} `json:"dist"`
 }
 
