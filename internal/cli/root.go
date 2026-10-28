@@ -28,7 +28,9 @@ var rootCmd = &cobra.Command{
 	Long: `Argus is a fast, ecosystem-agnostic, zero-SaaS CLI tool designed to inspect
 package provenance and intercept hallucinated or slopsquatted dependencies before
 they are installed by developers or autonomous AI coding agents.`,
-	Version: version.Formatted(),
+	Version:       version.Formatted(),
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func init() {

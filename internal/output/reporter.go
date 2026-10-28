@@ -124,15 +124,19 @@ func (r TTYReporter) Render(w io.Writer, report *model.RiskReport) error {
 	}
 
 	// Recommendation
-	switch report.RiskLevel {
-	case model.RiskLevelLow:
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render("✔ Provenance verified. Safe to install.") + "\n")
-	case model.RiskLevelMedium:
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD535")).Render("⚠ Notice: Moderate risk indicators present. Review before executing.") + "\n")
-	case model.RiskLevelHigh:
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8000")).Render("⚡ Warning: Elevated risk detected. Use caution.") + "\n")
-	default:
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("⛔ CRITICAL RISK: Potential slopsquat or unverified package. Blocked.") + "\n")
+	if report.Blocked {
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render(fmt.Sprintf("⛔ BLOCKED: Risk score %d/100 exceeds policy/threshold. Installation rejected.", report.TotalScore)) + "\n")
+	} else {
+		switch report.RiskLevel {
+		case model.RiskLevelLow:
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#00D26A")).Render("✔ Provenance verified. Safe to install.") + "\n")
+		case model.RiskLevelMedium:
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD535")).Render("⚠ Notice: Moderate risk indicators present. Review before executing.") + "\n")
+		case model.RiskLevelHigh:
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8000")).Render("⚡ Warning: Elevated risk detected. Use caution.") + "\n")
+		default:
+			sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F8312F")).Render("⛔ CRITICAL RISK: Potential slopsquat or unverified package. Blocked.") + "\n")
+		}
 	}
 
 	_, err := fmt.Fprint(w, sb.String())

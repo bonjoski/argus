@@ -126,3 +126,20 @@ func TestSwiftAdapter_NotFound(t *testing.T) {
 		t.Fatalf("expected error for non-existent package, got nil")
 	}
 }
+
+func TestSwiftAdapter_SPI401_Fallback(t *testing.T) {
+	spiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer spiServer.Close()
+
+	adapter := NewSwiftAdapter(spiServer.Client())
+	adapter.SetRegistryURL(spiServer.URL)
+
+	// apple/swift-argument-parser against live GitHub or simulated
+	// We can test that a non-owner/repo returns error
+	_, _, err := adapter.FetchProvenance(context.Background(), "not-a-repo", "")
+	if err == nil {
+		t.Fatalf("expected error when SPI returns 401 and package is not owner/repo")
+	}
+}

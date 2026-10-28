@@ -145,3 +145,68 @@ func TestEngine_MO04_ApprovedNamespace(t *testing.T) {
 		}
 	}
 }
+
+func TestEngine_SecurityTombstone_Lodahs(t *testing.T) {
+	engine := DefaultEngine()
+
+	prov := &model.PackageProvenance{
+		Name:                "lodahs",
+		Ecosystem:           model.EcosystemNPM,
+		ResolvedVersion:     "0.0.1-security",
+		IsSecurityTombstone: true,
+		TotalReleases:       1,
+		VCSStatus:           model.VCSStatusMismatch,
+		RepositoryURL:       "https://github.com/npm/security-holder",
+		IntegrityHash:       "sha512-4sdlXpUyy6...",
+	}
+
+	report := engine.Evaluate(prov)
+
+	if report.TotalScore < 80 {
+		t.Fatalf("expected lodahs to score CRITICAL (>=80), got %d", report.TotalScore)
+	}
+	if report.RiskLevel != model.RiskLevelCritical {
+		t.Errorf("expected RiskLevelCritical, got %s", report.RiskLevel)
+	}
+	if !report.Blocked {
+		t.Errorf("expected lodahs to be blocked")
+	}
+	if report.Safe {
+		t.Errorf("expected lodahs NOT to be safe")
+	}
+	if report.Verdict != model.VerdictBlock {
+		t.Errorf("expected verdict BLOCK, got %s", report.Verdict)
+	}
+
+	// MO-05 must NOT be triggered
+	for _, o := range report.Offsets {
+		if o.OffsetID == "MO-05" && o.Triggered {
+			t.Errorf("MO-05 Clean Provenance Profile must NOT trigger for security tombstone / mismatched VCS")
+		}
+	}
+}
+
+func TestEngine_Typosquat_Expresss(t *testing.T) {
+	engine := DefaultEngine()
+
+	prov := &model.PackageProvenance{
+		Name:            "expresss",
+		Ecosystem:       model.EcosystemNPM,
+		ResolvedVersion: "0.0.0",
+		TotalReleases:   1,
+		VCSStatus:       model.VCSStatusNone,
+		IntegrityHash:   "sha512-dnfKMF9...",
+	}
+
+	report := engine.Evaluate(prov)
+
+	if report.TotalScore < 50 {
+		t.Fatalf("expected expresss typosquat to score >= 50, got %d", report.TotalScore)
+	}
+	if report.Verdict != model.VerdictBlock {
+		t.Errorf("expected verdict BLOCK, got %s", report.Verdict)
+	}
+	if report.Safe {
+		t.Errorf("expected expresss NOT to be safe")
+	}
+}

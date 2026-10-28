@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -105,6 +106,18 @@ func (a *SwiftAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "Argus/1.0")
 
+	// Support optional Swift Package Index API token if provided
+	token := strings.TrimSpace(os.Getenv("SPI_API_KEY"))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("SWIFT_PACKAGE_INDEX_API_KEY"))
+	}
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("ARGUS_SPI_TOKEN"))
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to query swift package index: %w", err)
@@ -113,6 +126,13 @@ func (a *SwiftAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, "", fmt.Errorf("swift package %q not found", pkgName)
+	}
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		// Fallback to GitHub repository resolution if SPI requires authentication or returns 401
+		if strings.Contains(cleanPkg, "/") {
+			return a.fetchFromGitHub(ctx, pkgName, cleanPkg, version)
+		}
+		return nil, "", fmt.Errorf("swift package index returned HTTP %d", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", fmt.Errorf("swift package index returned HTTP %d", resp.StatusCode)
@@ -218,5 +238,126 @@ func (a *SwiftAdapter) FetchProvenance(ctx context.Context, pkgName, version str
 	prov.FirstReleaseDate = earliestTime
 	prov.LatestReleaseDate = latestTime
 
+	return prov, etag, nil
+}
+
+func (a *SwiftAdapter) fetchFromGitHub(ctx context.Context, pkgName, cleanPkg, version string) (*model.PackageProvenance, string, error) {
+	parts := strings.Split(cleanPkg, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, "", fmt.Errorf("swift package index returned HTTP 401 (unauthorized) and %q is not a valid GitHub repository", pkgName)
+	}
+	owner, repo := parts[0], parts[1]
+
+	ghAPI := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+	req, err := http.NewRequestWithContext(ctx, "GET", ghAPI, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create github request for swift package: %w", err)
+	}
+	ghToken := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	if ghToken == "" {
+		ghToken = strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	}
+	if ghToken != "" {
+		req.Header.Set("Authorization", "Bearer "+ghToken)
+	}
+	req.Header.Set("User-Agent", "Argus/1.0")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to reach github for swift package %q: %w", pkgName, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, "", fmt.Errorf("swift package %q not found", pkgName)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("github api returned HTTP %d for swift package %q", resp.StatusCode, pkgName)
+	}
+
+	var ghRepo struct {
+		Name        string    `json:"name"`
+		FullName    string    `json:"full_name"`
+		Description string    `json:"description"`
+		HTMLURL     string    `json:"html_url"`
+		CreatedAt   time.Time `json:"created_at"`
+		UpdatedAt   time.Time `json:"updated_at"`
+		Owner       struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+		StargazersCount int `json:"stargazers_count"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ghRepo); err != nil {
+		return nil, "", fmt.Errorf("failed to decode github response for swift package: %w", err)
+	}
+
+	// Fetch releases
+	relURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=30", owner, repo)
+	relReq, err := http.NewRequestWithContext(ctx, "GET", relURL, nil)
+	var releases []struct {
+		TagName     string    `json:"tag_name"`
+		PublishedAt time.Time `json:"published_at"`
+		TarballURL  string    `json:"tarball_url"`
+	}
+	if err == nil {
+		if ghToken != "" {
+			relReq.Header.Set("Authorization", "Bearer "+ghToken)
+		}
+		relReq.Header.Set("User-Agent", "Argus/1.0")
+		if relResp, err := a.client.Do(relReq); err == nil && relResp.StatusCode == http.StatusOK {
+			defer relResp.Body.Close()
+			_ = json.NewDecoder(relResp.Body).Decode(&releases)
+		}
+	}
+
+	targetVersion := version
+	var targetTarball string
+	var latestRelTime time.Time
+	if len(releases) > 0 {
+		if targetVersion == "" || targetVersion == "latest" {
+			targetVersion = strings.TrimPrefix(releases[0].TagName, "v")
+			targetTarball = releases[0].TarballURL
+			latestRelTime = releases[0].PublishedAt
+		} else {
+			for _, r := range releases {
+				cleanTag := strings.TrimPrefix(r.TagName, "v")
+				if cleanTag == strings.TrimPrefix(targetVersion, "v") {
+					targetVersion = cleanTag
+					targetTarball = r.TarballURL
+					latestRelTime = r.PublishedAt
+					break
+				}
+			}
+		}
+	}
+	if targetVersion == "" || targetVersion == "latest" {
+		targetVersion = "1.0.0"
+	}
+	if latestRelTime.IsZero() {
+		latestRelTime = ghRepo.UpdatedAt
+	}
+
+	totalReleases := len(releases)
+	if totalReleases == 0 {
+		totalReleases = 1
+	}
+
+	prov := &model.PackageProvenance{
+		Name:                   pkgName,
+		Ecosystem:              model.EcosystemSwift,
+		ResolvedVersion:        targetVersion,
+		TotalReleases:          totalReleases,
+		IsScoped:               true,
+		AuthorName:             ghRepo.Owner.Login,
+		RepositoryURL:          ghRepo.HTMLURL,
+		FirstReleaseDate:       ghRepo.CreatedAt,
+		LatestReleaseDate:      latestRelTime,
+		TarballURL:             targetTarball,
+		VCSStatus:              model.VCSStatusVerified,
+		RepositoryManifestName: ghRepo.Name,
+		RepositoryAgeMonths:    int(time.Since(ghRepo.CreatedAt).Hours() / 24 / 30),
+	}
+
+	etag := fmt.Sprintf("\"gh-%s-%s\"", ghRepo.FullName, targetVersion)
 	return prov, etag, nil
 }

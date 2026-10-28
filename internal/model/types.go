@@ -29,6 +29,15 @@ const (
 	RiskLevelCritical RiskLevel = "CRITICAL" // 80 - 100: Hard Block
 )
 
+// Verdict defines the actionable decision for package installation.
+type Verdict string
+
+const (
+	VerdictAllow Verdict = "ALLOW"
+	VerdictWarn  Verdict = "WARN"
+	VerdictBlock Verdict = "BLOCK"
+)
+
 // VCSStatus represents the verified state of a declared repository.
 type VCSStatus string
 
@@ -62,6 +71,7 @@ type PackageProvenance struct {
 	InGoChecksumDB        bool     `json:"in_go_checksum_db"`       // Go sum.golang.org presence
 	HasSuspiciousAST      bool     `json:"has_suspicious_ast"`      // Pre-flight static script inspector
 	SuspiciousFindings    []string `json:"suspicious_findings,omitempty"`
+	IsSecurityTombstone   bool     `json:"is_security_tombstone"`   // npm 0.0.1-security / registry revoked placeholder
 
 	// VCS Provenance
 	RepositoryURL          string    `json:"repository_url"`
@@ -110,6 +120,10 @@ type RiskReport struct {
 	TotalPenalties  int                       `json:"total_penalties"` // Raw sum of penalty points
 	TotalOffsets    int                       `json:"total_offsets"`   // Raw sum of offset credits
 	RiskLevel       RiskLevel                 `json:"risk_level"`
+	Verdict         Verdict                   `json:"verdict"`         // Actionable verdict: ALLOW, WARN, BLOCK
+	Blocked         bool                      `json:"blocked"`         // True if package blocked by score or policy
+	Safe            bool                      `json:"safe"`            // True if package verified safe
+	Action          string                    `json:"action"`          // Action string: "allow", "warn", "block"
 	LatencyMs       int64                     `json:"latency_ms"`
 	Cached          bool                      `json:"cached"`
 	Penalties       []HeuristicFinding        `json:"penalties"`

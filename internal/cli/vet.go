@@ -218,6 +218,40 @@ func runVet(cmd *cobra.Command, args []string) error {
 	}
 
 	// Output Formatting
+	hasVetoFinding := false
+	for _, p := range report.Penalties {
+		if p.Triggered && (p.RuleID == "HR-05B" || p.RuleID == "HR-06" || p.RuleID == "HR-10" || p.RuleID == "HR-11") {
+			hasVetoFinding = true
+			break
+		}
+	}
+
+	isBlocked := false
+	if report.TotalScore >= 80 || report.RiskLevel == model.RiskLevelCritical || report.Provenance.IsSecurityTombstone {
+		isBlocked = true
+	} else if report.TotalScore >= threshold {
+		isBlocked = true
+	} else if strictMode && (report.RiskLevel == model.RiskLevelHigh || report.TotalPenalties >= 60 || report.TotalScore >= 60 || hasVetoFinding) {
+		isBlocked = true
+	}
+
+	if isBlocked {
+		report.Blocked = true
+		report.Safe = false
+		report.Verdict = model.VerdictBlock
+		report.Action = "block"
+	} else if report.RiskLevel == model.RiskLevelHigh || report.RiskLevel == model.RiskLevelMedium || hasVetoFinding {
+		report.Blocked = false
+		report.Safe = false
+		report.Verdict = model.VerdictWarn
+		report.Action = "warn"
+	} else {
+		report.Blocked = false
+		report.Safe = true
+		report.Verdict = model.VerdictAllow
+		report.Action = "allow"
+	}
+
 	var reporter output.Reporter = output.TTYReporter{}
 	if jsonOutput {
 		reporter = output.JSONReporter{}
@@ -268,11 +302,11 @@ func runVet(cmd *cobra.Command, args []string) error {
 	isInteractive := isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd()) && !jsonOutput && !sarifOutput
 
 	if isInteractive {
-		switch {
-		case report.TotalScore < 30:
+		if !isBlocked {
 			return nil
-		case report.TotalScore >= 30 && report.TotalScore < 80:
-			fmt.Printf("\n⚠ Package risk score is %d/100 (Suspicious). Proceed with installation? [y/N]: ", report.TotalScore)
+		}
+		if report.TotalScore < 80 && !report.Provenance.IsSecurityTombstone && report.RiskLevel != model.RiskLevelCritical {
+			fmt.Printf("\n⚠ Package risk score is %d/100 (Blocked by threshold/policy). Proceed with installation? [y/N]: ", report.TotalScore)
 			var response string
 			if _, err := fmt.Scanln(&response); err != nil {
 				response = ""
@@ -284,14 +318,13 @@ func runVet(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Println("Installation aborted by user.")
 			os.Exit(1)
-		default:
-			if force {
-				fmt.Printf("\n⚡ Warning: Critical threat (%d/100) overridden with --force. Proceeding.\n", report.TotalScore)
-				return nil
-			}
-			fmt.Printf("\n⛔ Hard Block: Critical risk score %d/100 (>= 80). Installation aborted. (Override with --force)\n", report.TotalScore)
-			os.Exit(1)
 		}
+		if force {
+			fmt.Printf("\n⚡ Warning: Critical threat (%d/100) overridden with --force. Proceeding.\n", report.TotalScore)
+			return nil
+		}
+		fmt.Printf("\n⛔ Hard Block: Critical risk score %d/100 (>= 80). Installation aborted. (Override with --force)\n", report.TotalScore)
+		os.Exit(1)
 	}
 
 	// Non-Interactive / CI Policies
@@ -299,12 +332,11 @@ func runVet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if report.TotalScore >= threshold || report.RiskLevel == model.RiskLevelCritical {
+	if isBlocked {
+		if strictMode && report.RiskLevel == model.RiskLevelHigh {
+			os.Exit(2)
+		}
 		os.Exit(1)
-	}
-
-	if strictMode && report.RiskLevel == model.RiskLevelHigh {
-		os.Exit(2)
 	}
 
 	return nil

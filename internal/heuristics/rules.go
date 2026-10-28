@@ -261,6 +261,25 @@ func (r SuspiciousASTPayloadRule) Evaluate(prov *model.PackageProvenance) (bool,
 	return false, nil
 }
 
+// SecurityTombstoneRule (HR-11): Package is an unpublished security tombstone / placeholder.
+type SecurityTombstoneRule struct{}
+
+func (r SecurityTombstoneRule) ID() string   { return "HR-11" }
+func (r SecurityTombstoneRule) Name() string { return "Security Tombstone / Revoked Package" }
+func (r SecurityTombstoneRule) Points() int  { return 100 }
+func (r SecurityTombstoneRule) Description() string {
+	return "Package is an unpublished security placeholder or tombstone revoked for malicious behavior (e.g. npm 0.0.1-security)"
+}
+func (r SecurityTombstoneRule) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
+	if prov.IsSecurityTombstone || prov.ResolvedVersion == "0.0.1-security" || (len(prov.ResolvedVersion) > 9 && prov.ResolvedVersion[len(prov.ResolvedVersion)-9:] == "-security") || (len(prov.RepositoryURL) > 0 && prov.RepositoryURL == "https://github.com/npm/security-holder") {
+		return true, map[string]any{
+			"resolved_version": prov.ResolvedVersion,
+			"tombstone":        true,
+		}
+	}
+	return false, nil
+}
+
 // --- Reputational Mitigating Offsets Implementation ---
 
 // CryptographicAttestationOffset (MO-01): Sigstore, GitHub OIDC, or PEP 740 attestation.
@@ -352,8 +371,22 @@ func (o CleanProvenanceOffset) Description() string {
 	return "Package conforms to modern packaging standards (no lifecycle scripts, verified distribution artifact)"
 }
 func (o CleanProvenanceOffset) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
-	if !prov.HasInstallScripts && (prov.HasBinaryWheels || prov.InGoChecksumDB || (prov.Ecosystem == model.EcosystemCargo && prov.IntegrityHash != "") || (prov.Ecosystem == model.EcosystemNPM && prov.IntegrityHash != "")) {
-		if prov.TotalReleases > 1 || (!prov.FirstReleaseDate.IsZero() && time.Since(prov.FirstReleaseDate).Hours() > 24*7) {
+	// A package cannot have a clean provenance profile if it has install scripts, suspicious AST,
+	// is a security tombstone, has a spoofed/detached/missing repository, or has only 1 release.
+	if prov.HasInstallScripts || prov.HasSuspiciousAST || prov.IsSecurityTombstone || prov.ResolvedVersion == "0.0.1-security" {
+		return false, nil
+	}
+	// VCS repository must not be spoofed, detached, or missing
+	if prov.VCSStatus == model.VCSStatusMismatch || prov.VCSStatus == model.VCSStatusNone || prov.VCSStatus == model.VCSStatusMissing {
+		return false, nil
+	}
+	// Must not be a single-version release
+	if prov.TotalReleases <= 1 {
+		return false, nil
+	}
+	// Distribution artifact must be present and verified
+	if prov.HasBinaryWheels || prov.InGoChecksumDB || (prov.Ecosystem == model.EcosystemCargo && prov.IntegrityHash != "") || (prov.Ecosystem == model.EcosystemNPM && prov.IntegrityHash != "") {
+		if !prov.FirstReleaseDate.IsZero() && time.Since(prov.FirstReleaseDate).Hours() > 24*14 {
 			return true, map[string]any{"clean_profile": true}
 		}
 	}

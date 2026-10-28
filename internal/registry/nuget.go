@@ -27,7 +27,7 @@ func NewNuGetAdapter(client *http.Client) *NuGetAdapter {
 	}
 	return &NuGetAdapter{
 		client:      client,
-		registryURL: "https://api.nuget.org/v3/registration5-gz-semver",
+		registryURL: "https://api.nuget.org/v3/registration5-semver1",
 	}
 }
 

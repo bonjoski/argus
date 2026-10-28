@@ -57,16 +57,22 @@ type npmPackageDoc struct {
 	} `json:"maintainers"`
 }
 
+type npmAttestationDoc struct {
+	URL        string `json:"url"`
+	Provenance any    `json:"provenance"`
+}
+
 type npmVersionDoc struct {
-	Name    string            `json:"name"`
-	Version string            `json:"version"`
-	Scripts map[string]string `json:"scripts"`
-	Dist    struct {
-		Integrity    string `json:"integrity"`
-		Shasum       string `json:"shasum"`
-		Tarball      string `json:"tarball"`
-		Signatures   []any  `json:"signatures"`
-		Attestations any    `json:"attestations"`
+	Name        string              `json:"name"`
+	Version     string              `json:"version"`
+	Description string              `json:"description"`
+	Scripts     map[string]string   `json:"scripts"`
+	Dist        struct {
+		Integrity    string              `json:"integrity"`
+		Shasum       string              `json:"shasum"`
+		Tarball      string              `json:"tarball"`
+		Signatures   []any               `json:"signatures"`
+		Attestations *npmAttestationDoc  `json:"attestations"`
 	} `json:"dist"`
 }
 
@@ -148,13 +154,26 @@ func (a *NPMAdapter) FetchProvenance(ctx context.Context, pkgName, version strin
 		}
 
 		// Check for npm --provenance (Sigstore / GitHub Actions OIDC)
-		if len(verDoc.Dist.Signatures) > 0 || verDoc.Dist.Attestations != nil {
+		// Dist.Signatures are standard npm registry signatures attached to all packages.
+		// Only dist.attestations indicates authentic Sigstore / GitHub Actions OIDC provenance.
+		if verDoc.Dist.Attestations != nil && (verDoc.Dist.Attestations.Provenance != nil || verDoc.Dist.Attestations.URL != "") {
 			prov.HasSigstoreProvenance = true
 		}
 	}
 
 	// Parse Repository URL
 	prov.RepositoryURL = parseRepoURL(doc.Repository)
+
+	// Detect npm security placeholder / tombstone packages (e.g. 0.0.1-security)
+	var verDesc string
+	if verDoc, ok := doc.Versions[targetVersion]; ok {
+		verDesc = verDoc.Description
+	}
+	if targetVersion == "0.0.1-security" || strings.HasSuffix(targetVersion, "-security") ||
+		doc.Description == "security holding package" || verDesc == "security holding package" ||
+		strings.Contains(prov.RepositoryURL, "github.com/npm/security-holder") {
+		prov.IsSecurityTombstone = true
+	}
 
 	// Parse Author info
 	if len(doc.Maintainers) > 0 {

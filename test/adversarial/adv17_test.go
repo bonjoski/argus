@@ -41,12 +41,20 @@ func TestADV17_InlineRegistryMirrorPreFlightInterception(t *testing.T) {
 			_, _ = w.Write([]byte(`{
 				"name": "trusted-framework",
 				"dist-tags": {"latest": "3.2.0"},
+				"repository": {
+					"type": "git",
+					"url": "https://github.com/trusted/trusted-framework"
+				},
 				"time": {
 					"created": "2021-01-01T00:00:00Z",
 					"modified": "2024-01-01T00:00:00Z",
+					"1.0.0": "2021-01-01T00:00:00Z",
+					"2.0.0": "2022-01-01T00:00:00Z",
 					"3.2.0": "2024-01-01T00:00:00Z"
 				},
 				"versions": {
+					"1.0.0": {"name": "trusted-framework", "version": "1.0.0"},
+					"2.0.0": {"name": "trusted-framework", "version": "2.0.0"},
 					"3.2.0": {
 						"name": "trusted-framework",
 						"version": "3.2.0",

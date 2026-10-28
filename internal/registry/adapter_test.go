@@ -25,7 +25,11 @@ func TestNPMAdapter_FetchProvenance(t *testing.T) {
 				"dist": {
 					"integrity": "sha512-test-hash",
 					"tarball": "https://registry.npmjs.org/sample-pkg/-/sample-pkg-1.0.0.tgz",
-					"signatures": [{"keyid": "sig-1"}]
+					"signatures": [{"keyid": "sig-1"}],
+					"attestations": {
+						"url": "https://registry.npmjs.org/-/npm/v1/attestations/sample-pkg@1.0.0",
+						"provenance": {"predicateType": "https://slsa.dev/provenance/v1"}
+					}
 				}
 			}
 		},
