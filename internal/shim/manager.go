@@ -293,8 +293,16 @@ func parseInstallArgs(args []string) []string {
 		"--rev":         true,
 		"--path":        true,
 		"--target":      true,
-		"-t":            true,
-		"--prefix":      true,
+		"-t":                true,
+		"--prefix":          true,
+		"-i":                true,
+		"--index":           true,
+		"--extra-index-url": true,
+		"-s":                true,
+		"-source":           true,
+		"--source":          true,
+		"--exact":           true,
+		"--from":            true,
 	}
 
 	for _, a := range args {
@@ -304,7 +312,7 @@ func parseInstallArgs(args []string) []string {
 		}
 
 		if strings.HasPrefix(a, "-") {
-			if flagsWithValues[a] {
+			if flagsWithValues[strings.ToLower(a)] {
 				skipNext = true
 			}
 			continue

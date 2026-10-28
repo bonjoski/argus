@@ -391,6 +391,12 @@ func inspectContainerManifestLine(line string, rel string) *DiffFinding {
 	if strings.HasPrefix(trimmed, "#") {
 		return nil
 	}
+	if idx := strings.Index(trimmed, "#"); idx != -1 {
+		trimmed = strings.TrimSpace(trimmed[:idx])
+	}
+	if trimmed == "" {
+		return nil
+	}
 	lower := strings.ToLower(trimmed)
 
 	// 1. Docker daemon socket mount (/var/run/docker.sock)
