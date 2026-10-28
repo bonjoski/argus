@@ -17,6 +17,7 @@ const (
 	EcosystemPub       Ecosystem = "pub"
 	EcosystemHex       Ecosystem = "hex"
 	EcosystemSwift     Ecosystem = "swift"
+	EcosystemHelm      Ecosystem = "helm"
 )
 
 // RiskLevel defines the categorized severity of a risk score.

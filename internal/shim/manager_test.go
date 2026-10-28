@@ -88,6 +88,48 @@ func TestExtractTargets(t *testing.T) {
 			expectedTargets: []string{"guzzlehttp/guzzle"},
 			expectedInstall: true,
 		},
+		{
+			tool:            "uv",
+			args:            []string{"add", "httpx"},
+			expectedEco:     model.EcosystemPyPI,
+			expectedTargets: []string{"httpx"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "uv",
+			args:            []string{"pip", "install", "flask"},
+			expectedEco:     model.EcosystemPyPI,
+			expectedTargets: []string{"flask"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "bundle",
+			args:            []string{"add", "sidekiq"},
+			expectedEco:     model.EcosystemRubyGems,
+			expectedTargets: []string{"sidekiq"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "dotnet",
+			args:            []string{"add", "package", "Newtonsoft.Json", "--version", "13.0.3"},
+			expectedEco:     model.EcosystemNuGet,
+			expectedTargets: []string{"Newtonsoft.Json"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "nuget",
+			args:            []string{"install", "Serilog"},
+			expectedEco:     model.EcosystemNuGet,
+			expectedTargets: []string{"Serilog"},
+			expectedInstall: true,
+		},
+		{
+			tool:            "swift",
+			args:            []string{"package", "add-dependency", "https://github.com/apple/swift-argument-parser"},
+			expectedEco:     model.EcosystemSwift,
+			expectedTargets: []string{"https://github.com/apple/swift-argument-parser"},
+			expectedInstall: true,
+		},
 	}
 
 	for _, tc := range tests {

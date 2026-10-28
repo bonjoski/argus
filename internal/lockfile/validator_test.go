@@ -183,3 +183,30 @@ func TestVerifyFileDigest(t *testing.T) {
 		t.Errorf("expected hex digest mismatch for invalid hash")
 	}
 }
+
+func TestParseHelmChartLock(t *testing.T) {
+	yamlContent := []byte(`
+dependencies:
+  - name: ingress-nginx
+    version: 4.8.3
+    repository: https://kubernetes.github.io/ingress-nginx
+    digest: sha256:1122334455667788990011223344556677889900112233445566778899001122
+digest: sha256:overall
+generated: "2026-10-28T00:00:00Z"
+`)
+
+	deps, err := ParseHelmChartLock(yamlContent)
+	if err != nil {
+		t.Fatalf("ParseHelmChartLock failed: %v", err)
+	}
+
+	if len(deps) != 1 {
+		t.Fatalf("expected 1 dep, got %d", len(deps))
+	}
+	if deps[0].Ref.Name != "ingress-nginx" || deps[0].Ref.Ecosystem != "helm" {
+		t.Errorf("unexpected ref: %+v", deps[0].Ref)
+	}
+	if deps[0].Integrity != "sha256:1122334455667788990011223344556677889900112233445566778899001122" {
+		t.Errorf("unexpected integrity: %s", deps[0].Integrity)
+	}
+}

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"bonjoski/argus/internal/model"
 )
 
@@ -24,6 +26,7 @@ const (
 	LockfileTypeNpm   LockfileType = "npm"
 	LockfileTypeCargo LockfileType = "cargo"
 	LockfileTypeGoSum LockfileType = "golang"
+	LockfileTypeHelm  LockfileType = "helm"
 )
 
 // PackageRef represents a package reference within a lockfile or manifest.
@@ -236,6 +239,32 @@ func ParseGoSum(content []byte) ([]PinnedDependency, error) {
 	return results, nil
 }
 
+// ParseHelmChartLock parses a Helm Chart.lock YAML file.
+func ParseHelmChartLock(content []byte) ([]PinnedDependency, error) {
+	var doc helmChartLockDoc
+	if err := yaml.Unmarshal(content, &doc); err != nil {
+		return nil, fmt.Errorf("failed to parse Chart.lock: %w", err)
+	}
+
+	var results []PinnedDependency
+	for _, dep := range doc.Dependencies {
+		name := strings.TrimSpace(dep.Name)
+		if name == "" {
+			continue
+		}
+		results = append(results, PinnedDependency{
+			Ref: PackageRef{
+				Ecosystem: "helm",
+				Name:      name,
+				Version:   dep.Version,
+			},
+			Integrity: dep.Digest,
+			Resolved:  dep.Repository,
+		})
+	}
+	return results, nil
+}
+
 // AuditDependencies validates extracted dependencies against a trusted reference baseline.
 func (v *LockfileValidator) AuditDependencies(deps []PinnedDependency) *LockfileAuditReport {
 	report := &LockfileAuditReport{
@@ -366,6 +395,7 @@ var DefaultLockfileNames = []string{
 	"package-lock.json",
 	"Cargo.lock",
 	"go.sum",
+	"Chart.lock",
 	"poetry.lock",
 	"npm-shrinkwrap.json",
 	"packages.lock.json",

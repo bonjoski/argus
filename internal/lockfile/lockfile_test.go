@@ -22,6 +22,8 @@ func TestDetect(t *testing.T) {
 		{"pubspec.lock", model.EcosystemPub},
 		{"mix.lock", model.EcosystemHex},
 		{"Package.resolved", model.EcosystemSwift},
+		{"Chart.lock", model.EcosystemHelm},
+		{"charts/app/Chart.lock", model.EcosystemHelm},
 	}
 
 	for _, tc := range tests {
@@ -402,5 +404,37 @@ func TestSwiftLockParser(t *testing.T) {
 	}
 	if deps3[0].IntegrityHash != "snap-checksum-123" {
 		t.Errorf("expected checksum snap-checksum-123, got %s", deps3[0].IntegrityHash)
+	}
+}
+
+func TestHelmLockParser(t *testing.T) {
+	chartLockYAML := `
+dependencies:
+  - name: redis
+    version: 17.3.14
+    repository: https://charts.bitnami.com/bitnami
+    digest: sha256:abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234
+  - name: postgresql
+    version: 12.1.2
+    repository: https://charts.bitnami.com/bitnami
+    digest: sha256:ef012345ef012345ef012345ef012345ef012345ef012345ef012345ef012345
+digest: sha256:overallchartdigest
+generated: "2026-10-28T00:00:00Z"
+`
+	parser := &HelmLockParser{}
+	deps, err := parser.Parse(strings.NewReader(chartLockYAML))
+	if err != nil {
+		t.Fatalf("failed to parse Chart.lock: %v", err)
+	}
+
+	if len(deps) != 2 {
+		t.Fatalf("expected 2 dependencies, got %d", len(deps))
+	}
+
+	if deps[0].Name != "redis" || deps[0].Version != "17.3.14" || deps[0].Ecosystem != model.EcosystemHelm {
+		t.Errorf("unexpected dep 0: %+v", deps[0])
+	}
+	if !strings.HasPrefix(deps[0].IntegrityHash, "sha256:abcd") {
+		t.Errorf("unexpected digest for redis: %s", deps[0].IntegrityHash)
 	}
 }

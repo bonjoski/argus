@@ -19,10 +19,15 @@ var SupportedTools = []string{
 	"bun",
 	"pip",
 	"pip3",
+	"uv",
 	"cargo",
 	"go",
 	"gem",
+	"bundle",
 	"composer",
+	"dotnet",
+	"nuget",
+	"swift",
 }
 
 // DefaultShimDir returns ~/.argus/bin.
@@ -173,6 +178,21 @@ func ExtractTargets(tool string, args []string) (eco model.Ecosystem, targets []
 				return
 			}
 		}
+	case "uv":
+		for i, arg := range args {
+			if arg == "add" {
+				isInstall = true
+				eco = model.EcosystemPyPI
+				targets = parseInstallArgs(args[i+1:])
+				return
+			}
+			if arg == "pip" && i+1 < len(args) && args[i+1] == "install" {
+				isInstall = true
+				eco = model.EcosystemPyPI
+				targets = parseInstallArgs(args[i+2:])
+				return
+			}
+		}
 	case "cargo":
 		for i, arg := range args {
 			if arg == "add" {
@@ -200,6 +220,15 @@ func ExtractTargets(tool string, args []string) (eco model.Ecosystem, targets []
 				return
 			}
 		}
+	case "bundle":
+		for i, arg := range args {
+			if arg == "add" {
+				isInstall = true
+				eco = model.EcosystemRubyGems
+				targets = parseInstallArgs(args[i+1:])
+				return
+			}
+		}
 	case "composer":
 		for i, arg := range args {
 			if arg == "require" || arg == "install" {
@@ -207,6 +236,36 @@ func ExtractTargets(tool string, args []string) (eco model.Ecosystem, targets []
 				eco = model.EcosystemPackagist
 				targets = parseInstallArgs(args[i+1:])
 				return
+			}
+		}
+	case "dotnet":
+		for i, arg := range args {
+			if arg == "add" && i+1 < len(args) && (args[i+1] == "package" || args[i+1] == "pkg") {
+				isInstall = true
+				eco = model.EcosystemNuGet
+				targets = parseInstallArgs(args[i+2:])
+				return
+			}
+		}
+	case "nuget":
+		for i, arg := range args {
+			if arg == "install" || arg == "add" {
+				isInstall = true
+				eco = model.EcosystemNuGet
+				targets = parseInstallArgs(args[i+1:])
+				return
+			}
+		}
+	case "swift":
+		for i, arg := range args {
+			if arg == "package" && i+1 < len(args) {
+				sub := args[i+1]
+				if sub == "add-dependency" || sub == "add" {
+					isInstall = true
+					eco = model.EcosystemSwift
+					targets = parseInstallArgs(args[i+2:])
+					return
+				}
 			}
 		}
 	}
