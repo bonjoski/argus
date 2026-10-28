@@ -23,7 +23,7 @@
 - [What is Argus?](#-what-is-argus)
 - [Why is Argus Needed? The Threat Landscape](#-why-is-argus-needed-the-threat-landscape)
 - [How Argus Works (Architecture)](#-how-argus-works-architecture)
-- [Supported Ecosystems (11 Registries)](#-supported-ecosystems-11-registries)
+- [Supported Ecosystems (12 Ecosystems & Infrastructure)](#-supported-ecosystems-12-ecosystems--infrastructure)
 - [Installation](#-installation)
   - [Pre-Built Binaries (Recommended)](#1-pre-built-binaries-recommended)
   - [Cryptographic Verification via Sigstore Cosign](#2-cryptographic-verification-via-sigstore-cosign)
@@ -37,6 +37,7 @@
   - [5. Transparent Inline Registry Mirror Proxy](#5-transparent-inline-registry-mirror-proxy)
   - [6. Dynamic Install-Script Sanitization & Quarantine](#6-dynamic-install-script-sanitization--quarantine)
   - [7. Hardware-Isolated Process & Network Sandboxing](#7-hardware-isolated-process--network-sandboxing)
+  - [8. Pre-Commit Diff & Container / Kubernetes Manifest Auditing](#8-pre-commit-diff--container--kubernetes-manifest-auditing)
 - [Scoring Heuristics & Offsets](#-scoring-heuristics--offsets)
 - [Enterprise Policy Configuration (`.argusrc.yaml`)](#-enterprise-policy-configuration-argusrcyaml)
 - [CI/CD & GitHub Actions Integration](#-cicd--github-actions-integration)
@@ -179,9 +180,9 @@ Argus offers multiple layers of defense depending on your development environmen
 
 ---
 
-## 📦 Supported Ecosystems (11 Registries)
+## 📦 Supported Ecosystems (12 Ecosystems & Infrastructure)
 
-Argus supports **11 package ecosystems** natively with dedicated ground-truth registry adapters and lockfile parsers:
+Argus supports **12 package and infrastructure ecosystems** natively with dedicated ground-truth registry adapters and lockfile parsers:
 
 | Ecosystem | Toolchain Commands | Registry Queried | Lockfile Formats Supported | Key Telemetry Verified |
 | :--- | :--- | :--- | :--- | :--- |
@@ -196,6 +197,7 @@ Argus supports **11 package ecosystems** natively with dedicated ground-truth re
 | **Pub** | `dart pub`, `flutter pub` | `pub.dev/api` | `pubspec.lock` | Package popularity score, Verified publisher badge, Dart/Flutter SDK constraints |
 | **Hex** | `mix hex`, `mix deps.get` | `hex.pm/api` | `mix.lock` | Hex package checksums, Download counters, GitHub repo binding |
 | **Swift (SPM)** | `swift package` | Swift Package Index / Git | `Package.resolved` (v1, v2, v3) | Release tags, Semantic version pins, Package manifests |
+| **Helm** | `helm install`, `helm dep` | Artifact Hub / Helm OCI | `Chart.lock` | Cryptographic chart digests, Sub-chart provenance, Lockfile integrity |
 
 ---
 
@@ -214,23 +216,23 @@ Download the latest pre-compiled binary for your operating system and architectu
 
 ```bash
 # macOS (Apple Silicon - M1/M2/M3/M4)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_darwin_arm64.tar.gz
-tar -xzf argus_0.2.0_darwin_arm64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/argus_0.8.2_darwin_arm64.tar.gz
+tar -xzf argus_0.8.2_darwin_arm64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # macOS (Intel)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_darwin_amd64.tar.gz
-tar -xzf argus_0.2.0_darwin_amd64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/argus_0.8.2_darwin_amd64.tar.gz
+tar -xzf argus_0.8.2_darwin_amd64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # Linux (x86_64)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_linux_amd64.tar.gz
-tar -xzf argus_0.2.0_linux_amd64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/argus_0.8.2_linux_amd64.tar.gz
+tar -xzf argus_0.8.2_linux_amd64.tar.gz
 sudo mv argus /usr/local/bin/
 
 # Linux (ARM64 / Graviton / Raspberry Pi)
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/argus_0.2.0_linux_arm64.tar.gz
-tar -xzf argus_0.2.0_linux_arm64.tar.gz
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/argus_0.8.2_linux_arm64.tar.gz
+tar -xzf argus_0.8.2_linux_arm64.tar.gz
 sudo mv argus /usr/local/bin/
 ```
 
@@ -240,8 +242,8 @@ All official Argus release binaries are keylessly signed via **Sigstore Cosign**
 
 ```bash
 # Download checksum and signature files
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/checksums.txt
-curl -LO https://github.com/bonjoski/argus/releases/download/v0.2.0/checksums.txt.sig
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/checksums.txt
+curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/checksums.txt.sig
 
 # Verify signature against Sigstore transparency log (Rekor / Fulcio)
 cosign verify-blob \
@@ -257,7 +259,7 @@ sha256sum -c checksums.txt --ignore-missing
 ### 3. Via Go Toolchain
 
 ```bash
-go install bonjoski/argus/cmd/argus@v0.2.0
+go install bonjoski/argus/cmd/argus@v0.8.2
 ```
 
 ### 4. Build from Source
@@ -454,6 +456,29 @@ argus sandbox profile
 
 ---
 
+### 8. Pre-Commit Diff & Container / Kubernetes Manifest Auditing
+
+Audit staged git diffs, Dockerfiles, Docker Compose, and Kubernetes manifests for weaponized configurations before commit or deploy:
+
+```bash
+# Audit staged repository git diff for delayed weaponization payloads
+argus diff
+
+# Inspect containerfiles and manifests directly
+argus scan Dockerfile
+argus scan docker-compose.yml
+argus scan k8s/deployment.yaml
+```
+
+**Intercepted Threat Vectors:**
+* 🐳 **Docker Daemon Socket Mounts (`CRITICAL`)**: Flags `/var/run/docker.sock` volume mounts in Compose and Kubernetes manifests that permit host root container escape.
+* 🛡️ **Privileged Container Mode (`HIGH`)**: Intercepts `privileged: true` disabling Linux kernel containment.
+* 🖥️ **Host Namespace Sharing (`HIGH`)**: Detects `hostPID: true`, `hostNetwork: true`, and `hostIPC: true`.
+* ⚡ **Unverified Script Execution (`CRITICAL`)**: Flags `RUN curl ... | sh` and `RUN wget ... | bash` in Dockerfiles.
+* 🔑 **Secret & Credential Exfiltration (`HIGH`)**: Intercepts `COPY`/`ADD` instructions copying `.ssh`, `.aws`, `.env`, or private keys into container layers.
+
+---
+
 ## ⚖️ Scoring Heuristics & Offsets
 
 Argus computes a balanced risk score on a scale of `0 – 100`:
@@ -475,6 +500,7 @@ $$\text{Final Risk Score} = \text{clamp}\left(0, 100, \sum \text{Penalties} - \s
 | `HR-08` | **Sudden Sleeper** | `+25` | Inactive/dormant package suddenly publishes an unexpected release. |
 | `HR-09` | **Install Lifecycle Hooks** | `+30` | Declares `preinstall`/`postinstall` scripts in unvetted package. |
 | `HR-10` | **Suspicious Static AST** | `+35` | AST inspection detects obfuscated `eval()`, `execSync()`, or network reverse shells. |
+| `HR-11` | **Security Tombstone** | `+100` | Package revoked or replaced with a security placeholder (e.g. npm `0.0.1-security`). |
 
 ### 🛡️ Reputational Mitigating Offsets
 
@@ -559,7 +585,7 @@ jobs:
 
 ## 🧪 Adversarial Verification Suite
 
-Argus maintains a **20-point Red Team Adversarial Suite** (`ADV-01` through `ADV-20`) to guarantee that edge-case exploits and evasion techniques are blocked:
+Argus maintains a **22-point Red Team Adversarial Suite** (`ADV-01` through `ADV-22`) to guarantee that edge-case exploits and evasion techniques are blocked:
 
 | Test ID | Adversarial Bypass Target | Verification Strategy |
 | :--- | :--- | :--- |
@@ -583,6 +609,8 @@ Argus maintains a **20-point Red Team Adversarial Suite** (`ADV-01` through `ADV
 | `ADV-18` | Malicious Install-Script Neutralization | Tarball de-weaponization & quarantine |
 | `ADV-19` | Extended Ecosystems & Lockfiles | NuGet, Pub, Hex, Swift registry & lockfile verification |
 | `ADV-20` | System Sandbox Isolation Boundary | Seatbelt & Landlock permission-denied enforcement |
+| `ADV-21` | Attestation Laundering & Impersonation Veto | Prohibits registry signatures from offsetting conflation or spoofed VCS |
+| `ADV-22` | Container Escape Infiltration & Helm Tampering | Intercepts Dockerfile curl pipes, socket mounts, privileged mode, and Helm digest tampering |
 
 Run the full adversarial test suite locally:
 ```bash
