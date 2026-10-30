@@ -198,8 +198,8 @@ jobs:
 
       - name: Run Argus Self-Scan on Repository Lockfiles
         run: |
-          ./bin/argus scan go.sum --sarif > argus-results.sarif
-          ./bin/argus scan go.sum --json
+          ./bin/argus scan go.sum --threshold 60 --sarif > argus-results.sarif
+          ./bin/argus scan go.sum --threshold 60 --json
 
       - name: Upload Scan SARIF Artifact
         uses: actions/upload-artifact@v4
