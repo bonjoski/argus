@@ -1,0 +1,21 @@
+name: agent_exfiltration_via_curl
+version: 1.0
+description: "Detects multi-step credential harvesting and external network exfiltration"
+severity: CRITICAL
+window: 60s
+action: kill
+causal_sequence:
+  - step: reconnaissance
+    events:
+      - layer: l7_mcp
+        action: list_directory
+        path_matches: "\\.env|secrets"
+  - step: payload_assembly
+    events:
+      - layer: l7_mcp
+        action: read_file
+  - step: egress_execution
+    events:
+      - layer: l3_kernel
+        action: syscall_connect
+        dest_not_in: ["internal.lan", "github.com"]

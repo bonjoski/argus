@@ -18,11 +18,13 @@ import (
 	"bonjoski/argus/internal/registry"
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/vcs"
+	"bonjoski/argus/pkg/quarry"
 )
 
 var (
 	daemonSocketPath string
 	daemonPidPath    string
+	daemonRulesPath  string
 )
 
 func newDaemonCmd() *cobra.Command {
@@ -35,6 +37,7 @@ func newDaemonCmd() *cobra.Command {
 
 	cmd.PersistentFlags().StringVar(&daemonSocketPath, "socket", defaultSock, "Unix domain socket path for daemon IPC")
 	cmd.PersistentFlags().StringVar(&daemonPidPath, "pid-file", defaultPid, "PID file path for daemon process")
+	cmd.PersistentFlags().StringVar(&daemonRulesPath, "rules", "", "Path to Quarry detection rules YAML directory or file")
 
 	cmd.AddCommand(newDaemonRunCmd())
 	cmd.AddCommand(newDaemonStartCmd())
@@ -74,6 +77,22 @@ func newDaemonRunCmd() *cobra.Command {
 			fmt.Println(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#00D26A")).Render("🚀 Starting Argus IPC Resident Daemon..."))
 			fmt.Printf("   Socket: %s\n", daemonSocketPath)
 			fmt.Printf("   PID:    %d\n", os.Getpid())
+
+			if daemonRulesPath != "" {
+				if fi, err := os.Stat(daemonRulesPath); err == nil {
+					var rules []*quarry.Rule
+					if fi.IsDir() {
+						rules, _ = quarry.LoadRulesFromDir(daemonRulesPath)
+					} else {
+						if r, err := quarry.LoadRuleFromFile(daemonRulesPath); err == nil {
+							rules = []*quarry.Rule{r}
+						}
+					}
+					if len(rules) > 0 {
+						fmt.Printf("   Quarry: Loaded %d detection rule(s) from %s\n", len(rules), daemonRulesPath)
+					}
+				}
+			}
 
 			if err := server.Start(ctx); err != nil {
 				return fmt.Errorf("daemon server terminated with error: %w", err)
