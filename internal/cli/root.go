@@ -55,6 +55,8 @@ func init() {
 	rootCmd.AddCommand(newSanitizeCmd())
 	rootCmd.AddCommand(newQuarantineCmd())
 	rootCmd.AddCommand(newSandboxCmd())
+	rootCmd.AddCommand(newTestCmd())
+	rootCmd.AddCommand(newExplainCmd())
 }
 
 func Execute() {

