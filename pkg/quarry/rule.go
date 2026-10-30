@@ -56,14 +56,14 @@ type Rule struct {
 // UnmarshalYAML implements custom unmarshaling to handle string or numeric version fields.
 func (r *Rule) UnmarshalYAML(value *yaml.Node) error {
 	type rawRule struct {
-		Name             string         `yaml:"name"`
-		VersionNode      yaml.Node      `yaml:"version"`
-		Description      string         `yaml:"description,omitempty"`
-		Severity         string         `yaml:"severity,omitempty"`
-		Window           string         `yaml:"window"`
-		SessionWindow    string         `yaml:"session_window,omitempty"`
-		Action           string         `yaml:"action"`
-		CausalSequence   []SequenceStep `yaml:"causal_sequence"`
+		Name           string         `yaml:"name"`
+		VersionNode    yaml.Node      `yaml:"version"`
+		Description    string         `yaml:"description,omitempty"`
+		Severity       string         `yaml:"severity,omitempty"`
+		Window         string         `yaml:"window"`
+		SessionWindow  string         `yaml:"session_window,omitempty"`
+		Action         string         `yaml:"action"`
+		CausalSequence []SequenceStep `yaml:"causal_sequence"`
 	}
 
 	var raw rawRule
