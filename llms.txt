@@ -1,0 +1,20 @@
+# Argus
+
+> Pre-Flight Dependency Provenance & AI Slopsquatting Interceptor.
+
+## Core Capabilities
+- Slopsquatting Defense: Detects and blocks AI-hallucinated and typosquatted dependencies before package manager invocation.
+- Zero-SaaS Local Heuristics: Evaluates release age (<72 hours), Levenshtein distance against canonical registries, author reputation, and version velocity locally.
+- Cisco Project Quarry Engine: Standardized telemetry and composite threat scoring engine.
+- Killswitch Event Bus: Emits instant SIGKILL notifications across `~/.argus/argus.sock` upon intercepting high-risk packages.
+
+## CLI Usage
+- `argus audit --ecosystem <npm|pypi|cargo> --package <name>`: Audits proposed package.
+- `argus audit --manifest package.json`: Scans an entire manifest file.
+- `argus-shim <pkg_manager> <args>`: Transparent command interceptor wrapper.
+- `argus daemon --listen ~/.argus/argus.sock`: Starts the IPC killswitch bus.
+
+## Sockets & Paths
+- Event Bus Socket: `~/.argus/argus.sock`
+- Config File: `~/.argus/config.yaml`
+- Documentation: `docs/knowledge-base/04-argus.md` in repo `spanreed`
