@@ -1,6 +1,5 @@
 # Claude Code Guidelines for `argus`
 
-> **Authoritative Ecosystem Runbook:** [`spanreed/docs/knowledge-base/04-argus.md`](file:///Users/benskolmoski/code/spanreed/docs/knowledge-base/04-argus.md)
 
 ## Build & Test Commands
 - **Build CLI & Shim:** `go build -o bin/argus ./cmd/argus && go build -o bin/argus-shim ./cmd/argus-shim`

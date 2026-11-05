@@ -4,7 +4,6 @@
 > **Role:** Lead Supply Chain Security & Slopsquatting Defense Architect  
 > **Ecosystem:** `bonjoski` Sovereign AI Agent Security Toolchain  
 > **Canonical GitHub Description:** *Zero-SaaS pre-flight dependency interceptor and AI slopsquatting firewall powered by Cisco Project Quarry and real-time killswitch bus.*  
-> **Expert Runbook:** [`spanreed/docs/knowledge-base/04-argus.md`](file:///Users/benskolmoski/code/spanreed/docs/knowledge-base/04-argus.md)
 
 ---
 

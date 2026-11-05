@@ -16,4 +16,4 @@
 ## Key Sockets & Paths
 - Killswitch Socket: `~/.argus/argus.sock`
 - Audit Log: `~/.argus/audit.log`
-- Parent Runbook: `docs/knowledge-base/04-argus.md` in repository `spanreed`
+- Documentation: README.md & AGENTS.md
