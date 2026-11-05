@@ -1,20 +1,19 @@
 # Argus
 
-> Pre-Flight Dependency Provenance & AI Slopsquatting Interceptor.
+> Zero-SaaS pre-flight dependency interceptor and AI slopsquatting firewall powered by Cisco Project Quarry and real-time killswitch bus.
 
 ## Core Capabilities
-- Slopsquatting Defense: Detects and blocks AI-hallucinated and typosquatted dependencies before package manager invocation.
-- Zero-SaaS Local Heuristics: Evaluates release age (<72 hours), Levenshtein distance against canonical registries, author reputation, and version velocity locally.
-- Cisco Project Quarry Engine: Standardized telemetry and composite threat scoring engine.
-- Killswitch Event Bus: Emits instant SIGKILL notifications across `~/.argus/argus.sock` upon intercepting high-risk packages.
+- Pre-Flight AST Interception: Intercepts dependency installations before package managers access the network.
+- Zero-SaaS Heuristics: Local evaluation of package release age, version velocity, and Levenshtein typosquat similarity.
+- Cisco Project Quarry Runtime: Standardized offline package reputation and maintainer trust schemas.
+- Real-Time Killswitch Bus: Broadcasts instant SIGKILL payloads over `~/.argus/argus.sock` upon malicious package detection.
 
 ## CLI Usage
-- `argus audit --ecosystem <npm|pypi|cargo> --package <name>`: Audits proposed package.
-- `argus audit --manifest package.json`: Scans an entire manifest file.
-- `argus-shim <pkg_manager> <args>`: Transparent command interceptor wrapper.
-- `argus daemon --listen ~/.argus/argus.sock`: Starts the IPC killswitch bus.
+- `argus audit --package <name>`: Evaluates safety and reputation of a target package name.
+- `argus scan`: Inspects workspace lockfiles for hallucinated dependencies.
+- `argus doctor`: Verifies interception shims and local reputation caches.
 
-## Sockets & Paths
-- Event Bus Socket: `~/.argus/argus.sock`
-- Config File: `~/.argus/config.yaml`
-- Documentation: `docs/knowledge-base/04-argus.md` in repo `spanreed`
+## Key Sockets & Paths
+- Killswitch Socket: `~/.argus/argus.sock`
+- Audit Log: `~/.argus/audit.log`
+- Parent Runbook: `docs/knowledge-base/04-argus.md` in repository `spanreed`
