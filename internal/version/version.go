@@ -4,7 +4,7 @@ import "fmt"
 
 var (
 	// Version is the single source of truth for the Argus release version.
-	Version = "v0.9.0"
+	Version = "v0.9.1"
 
 	// GitCommit is injected at build time via -ldflags.
 	GitCommit = "none"
