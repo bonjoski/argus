@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/bonjoski/stoneward/pkg/client"
 )
 
 // TelemetryBusOptions configures the in-memory telemetry ring buffer.
@@ -23,16 +25,17 @@ type TelemetryBusOptions struct {
 // TelemetryBus provides non-blocking, lock-free ingestion for high-throughput
 // security and operational telemetry streams from Airlock, Locksmith, and Aegisbox.
 type TelemetryBus struct {
-	mu            sync.Mutex
-	opts          TelemetryBusOptions
-	ch            chan *AuditEvent
-	killswitch    *KillswitchCoordinator
-	totalIngested atomic.Int64
-	droppedEvents atomic.Int64
-	logFile       io.WriteCloser
-	stopCh        chan struct{}
-	workerDone    chan struct{}
-	closed        bool
+	mu             sync.Mutex
+	opts           TelemetryBusOptions
+	ch             chan *AuditEvent
+	killswitch     *KillswitchCoordinator
+	totalIngested  atomic.Int64
+	droppedEvents  atomic.Int64
+	logFile        io.WriteCloser
+	stopCh         chan struct{}
+	workerDone     chan struct{}
+	closed         bool
+	cloudForwarder *client.CloudForwarder
 }
 
 // NewTelemetryBus initializes an ingestion bus and starts the background sink drainer.
@@ -55,11 +58,12 @@ func NewTelemetryBus(opts ...TelemetryBusOptions) *TelemetryBus {
 	}
 
 	bus := &TelemetryBus{
-		opts:       opt,
-		ch:         make(chan *AuditEvent, opt.Capacity),
-		killswitch: NewKillswitchCoordinator(opt.LocksmithSock),
-		stopCh:     make(chan struct{}),
-		workerDone: make(chan struct{}),
+		opts:           opt,
+		ch:             make(chan *AuditEvent, opt.Capacity),
+		killswitch:     NewKillswitchCoordinator(opt.LocksmithSock),
+		stopCh:         make(chan struct{}),
+		workerDone:     make(chan struct{}),
+		cloudForwarder: client.NewCloudForwarder(),
 	}
 
 	// Open local telemetry log sink if path provided
@@ -135,18 +139,58 @@ func (b *TelemetryBus) drainWorker() {
 }
 
 func (b *TelemetryBus) writeEvent(ev *AuditEvent) {
-	if ev == nil || b.logFile == nil {
+	if ev == nil {
 		return
 	}
-	// Write CEF formatted record
-	cef := ev.CEF()
-	_, _ = fmt.Fprintln(b.logFile, cef)
 
-	// Also write OTel JSON record
-	otelData, err := json.Marshal(ev.OTelMap())
-	if err == nil {
-		_, _ = fmt.Fprintln(b.logFile, string(otelData))
+	if b.logFile != nil {
+		// Write CEF formatted record
+		cef := ev.CEF()
+		_, _ = fmt.Fprintln(b.logFile, cef)
+
+		// Also write OTel JSON record
+		otelData, err := json.Marshal(ev.OTelMap())
+		if err == nil {
+			_, _ = fmt.Fprintln(b.logFile, string(otelData))
+		}
 	}
+
+	// Stream to Stoneward control plane IF AND ONLY IF Fabrial has authenticated:
+	if b.cloudForwarder != nil && b.cloudForwarder.IsActive() {
+		command := ""
+		if ev.AgentContext != nil {
+			command = ev.AgentContext.CommandAST
+		}
+		tier := "airlock"
+		if ev.Source == "aegisbox" {
+			tier = "aegisbox"
+		}
+		blocked := (ev.Severity == SeverityCritical)
+		_ = b.cloudForwarder.ForwardAuditEvent(
+			ev.Source,
+			ev.EventType,
+			string(ev.Severity),
+			command,
+			tier,
+			blocked,
+			ev.EventType,
+			ev.Details,
+		)
+	}
+}
+
+// SetCloudForwarder overrides the cloud forwarder (useful for testing or custom transport).
+func (b *TelemetryBus) SetCloudForwarder(cf *client.CloudForwarder) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cloudForwarder = cf
+}
+
+// CloudForwarder returns the server's cloud forwarder.
+func (b *TelemetryBus) CloudForwarder() *client.CloudForwarder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.cloudForwarder
 }
 
 // Stats returns current operational metrics of the telemetry bus.
@@ -166,6 +210,10 @@ func (b *TelemetryBus) Close() error {
 
 	close(b.stopCh)
 	<-b.workerDone
+
+	if b.cloudForwarder != nil {
+		_ = b.cloudForwarder.Close()
+	}
 
 	if b.logFile != nil {
 		_ = b.logFile.Close()

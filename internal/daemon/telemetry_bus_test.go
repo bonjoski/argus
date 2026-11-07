@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bonjoski/stoneward/pkg/client"
 )
 
 func TestTelemetryBus_BasicIngest(t *testing.T) {
@@ -115,5 +120,81 @@ func TestTelemetryBus_CriticalEventPriority(t *testing.T) {
 	_, _, kills, _ := bus.Stats()
 	if kills != 1 {
 		t.Fatalf("expected killswitch to be triggered once for critical event, got %d", kills)
+	}
+}
+
+func TestTelemetryBus_CloudStreamingConditionedOnFabrialAuth(t *testing.T) {
+	tmpDir := t.TempDir()
+	authFile := filepath.Join(tmpDir, "auth.json")
+	t.Setenv("FABRIAL_AUTH_FILE", authFile)
+	t.Setenv("FABRIAL_AUTH_TOKEN", "")
+	t.Setenv("STONEWARD_TOKEN", "")
+
+	var receivedEvents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/telemetry" {
+			var batch []map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&batch)
+			for _, item := range batch {
+				if tool, ok := item["tool_name"].(string); ok {
+					receivedEvents = append(receivedEvents, tool)
+				}
+			}
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	// 1. UNAUTHENTICATED: Cloud forwarder must be inactive and send 0 events to cloud
+	busUnauth := NewTelemetryBus(TelemetryBusOptions{Capacity: 10})
+	if busUnauth.CloudForwarder() != nil && busUnauth.CloudForwarder().IsActive() {
+		t.Fatal("expected cloud forwarder to be inactive when Fabrial is unauthenticated")
+	}
+
+	_ = busUnauth.Ingest(&AuditEvent{
+		TraceID:   "unauth-trace",
+		Source:    "airlock",
+		EventType: "command.exec",
+		Severity:  SeverityInfo,
+	})
+	time.Sleep(50 * time.Millisecond)
+	_ = busUnauth.Close()
+
+	if len(receivedEvents) != 0 {
+		t.Fatalf("expected 0 events sent to cloud when unauthenticated, got %d", len(receivedEvents))
+	}
+
+	// 2. AUTHENTICATED: Save valid Fabrial auth pointing to mock cloud server
+	validAuth := &client.FabrialAuthContext{
+		Token:     "stnw_live_argus_cloud_token",
+		TenantID:  "tenant-argus-test",
+		ServerURL: srv.URL,
+		CreatedAt: time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(12 * time.Hour),
+	}
+	if err := client.SaveFabrialAuth(validAuth); err != nil {
+		t.Fatalf("failed to save fabrial auth: %v", err)
+	}
+
+	busAuth := NewTelemetryBus(TelemetryBusOptions{Capacity: 10})
+	if busAuth.CloudForwarder() == nil || !busAuth.CloudForwarder().IsActive() {
+		t.Fatal("expected cloud forwarder to be active when Fabrial is authenticated")
+	}
+
+	_ = busAuth.Ingest(&AuditEvent{
+		TraceID:   "auth-trace-1",
+		Source:    "locksmith",
+		EventType: "secret.lease.granted",
+		Severity:  SeverityInfo,
+		Details:   map[string]any{"secret": "AWS_SECRET_KEY"},
+	})
+
+	time.Sleep(100 * time.Millisecond)
+	_ = busAuth.Close()
+
+	if len(receivedEvents) != 1 || receivedEvents[0] != "locksmith" {
+		t.Fatalf("expected 1 locksmith event delivered to cloud control plane, got: %v", receivedEvents)
 	}
 }
