@@ -85,16 +85,21 @@ func TestConflationEngine_TokenConflation(t *testing.T) {
 func TestConflationEngine_ApprovedNamespace(t *testing.T) {
 	engine := NewEngine()
 
-	// "pytest-fastapi-deps" should be exempt via pytest-*
-	res := engine.Evaluate("pytest-fastapi-deps", model.EcosystemPyPI)
-	if res.IsConflated {
-		t.Errorf("expected pytest-fastapi-deps to be exempt, but got conflated: %+v", res)
+	// Registry-enforced organizational scopes (@types/*, @eslint/*) ARE exempt
+	resTypes := engine.Evaluate("@types/express-auth-helpers", model.EcosystemNPM)
+	if resTypes.IsConflated {
+		t.Errorf("expected @types/express-auth-helpers to be exempt under @types/* org scope, got: %+v", resTypes)
 	}
 
-	// "eslint-plugin-security" should be exempt via eslint-plugin-*
-	resESLint := engine.Evaluate("eslint-plugin-security", model.EcosystemNPM)
-	if resESLint.IsConflated {
-		t.Errorf("expected eslint-plugin-security to be exempt, but got conflated: %+v", resESLint)
+	// Unscoped public prefixes (pytest-*, eslint-plugin-*) MUST NOT grant exemption or -20 credit (ARG-06)
+	resUnscopedPyPI := engine.Evaluate("pytest-fastapi-auth", model.EcosystemPyPI)
+	if !resUnscopedPyPI.IsConflated {
+		t.Errorf("expected unscoped pytest-fastapi-auth slopsquat to be flagged as conflated, got exempt")
+	}
+
+	resUnscopedNPM := engine.Evaluate("eslint-plugin-express-auth", model.EcosystemNPM)
+	if !resUnscopedNPM.IsConflated {
+		t.Errorf("expected unscoped eslint-plugin-express-auth slopsquat to be flagged as conflated, got exempt")
 	}
 }
 

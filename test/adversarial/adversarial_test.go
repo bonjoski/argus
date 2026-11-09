@@ -285,52 +285,60 @@ func TestADV08_CratesIOTokenBucketRateLimiting(t *testing.T) {
 	}
 }
 
-// ADV-09: Plugin Prefix Whitelisting
+// ADV-09: Organizational Scope Whitelisting vs Unscoped Prefix Spoofing (ARG-06)
 func TestADV09_PluginPrefixWhitelisting(t *testing.T) {
 	evaluator := heuristics.DefaultEngine()
 
-	// Legitimate plugin: pytest-fastapi-deps
-	provPlugin := &model.PackageProvenance{
-		Name:      "pytest-fastapi-deps",
-		Ecosystem: model.EcosystemPyPI,
+	// Verified registry-enforced org scope: @types/express-session
+	provScoped := &model.PackageProvenance{
+		Name:      "@types/express-session",
+		Ecosystem: model.EcosystemNPM,
+		IsScoped:  true,
 	}
 
-	reportPlugin := evaluator.Evaluate(provPlugin)
+	reportScoped := evaluator.Evaluate(provScoped)
 
-	// Verify HR-06 (Conflation) did NOT trigger
-	for _, p := range reportPlugin.Penalties {
+	// Verify HR-06 (Conflation) did NOT trigger for verified @types/* scope
+	for _, p := range reportScoped.Penalties {
 		if p.RuleID == "HR-06" && p.Triggered {
-			t.Errorf("ADV-09 Failed: HR-06 triggered on approved plugin namespace %s", provPlugin.Name)
+			t.Errorf("ADV-09 Failed: HR-06 triggered on verified org scope %s", provScoped.Name)
 		}
 	}
 
-	// Verify MO-04 (Approved Namespace) DID trigger
+	// Verify MO-04 (Approved Namespace) DID trigger for verified @types/* scope
 	foundMO04 := false
-	for _, o := range reportPlugin.Offsets {
+	for _, o := range reportScoped.Offsets {
 		if o.OffsetID == "MO-04" && o.Triggered {
 			foundMO04 = true
 			break
 		}
 	}
 	if !foundMO04 {
-		t.Errorf("ADV-09 Failed: expected MO-04 to trigger on approved plugin namespace %s", provPlugin.Name)
+		t.Errorf("ADV-09 Failed: expected MO-04 to trigger on verified org scope %s", provScoped.Name)
 	}
 
-	// Contrast with actual conflation: express-auth-helpers
-	provConflated := &model.PackageProvenance{
-		Name:      "express-auth-helpers",
-		Ecosystem: model.EcosystemNPM,
-	}
-	reportConflated := evaluator.Evaluate(provConflated)
-	foundHR06 := false
-	for _, p := range reportConflated.Penalties {
-		if p.RuleID == "HR-06" && p.Triggered {
-			foundHR06 = true
-			break
+	// Contrast with unscoped prefix slopsquat (eslint-plugin-express-auth) and conflated express-auth-helpers:
+	// Neither may claim MO-04, and both must trigger HR-06!
+	for _, malName := range []string{"express-auth-helpers", "eslint-plugin-express-auth"} {
+		reportConflated := evaluator.Evaluate(&model.PackageProvenance{
+			Name:      malName,
+			Ecosystem: model.EcosystemNPM,
+		})
+		for _, o := range reportConflated.Offsets {
+			if o.OffsetID == "MO-04" && o.Triggered {
+				t.Errorf("ADV-09 Failed: MO-04 falsely awarded to unscoped package %s", malName)
+			}
 		}
-	}
-	if !foundHR06 {
-		t.Errorf("ADV-09 Failed: expected HR-06 to trigger on conflated package %s", provConflated.Name)
+		foundHR06 := false
+		for _, p := range reportConflated.Penalties {
+			if p.RuleID == "HR-06" && p.Triggered {
+				foundHR06 = true
+				break
+			}
+		}
+		if !foundHR06 {
+			t.Errorf("ADV-09 Failed: expected HR-06 to trigger on conflated package %s", malName)
+		}
 	}
 }
 

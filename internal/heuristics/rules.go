@@ -349,7 +349,7 @@ func (o ApprovedNamespaceOffset) ID() string   { return "MO-04" }
 func (o ApprovedNamespaceOffset) Name() string { return "Approved Ecosystem Namespace" }
 func (o ApprovedNamespaceOffset) Credits() int { return 20 }
 func (o ApprovedNamespaceOffset) Description() string {
-	return "Standard plugin naming convention (pytest-*, eslint-plugin-*, mkdocs-*, django-*, cargo-*) or approved scope"
+	return "Registry-enforced organizational scope (@types/*, @angular/*, golang.org/x/*, etc.)"
 }
 func (o ApprovedNamespaceOffset) Evaluate(prov *model.PackageProvenance) (bool, map[string]any) {
 	if conflation.IsApprovedNamespace(prov.Name, prov.Ecosystem) {

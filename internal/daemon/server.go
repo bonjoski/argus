@@ -9,13 +9,18 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"bonjoski/argus/internal/procident"
 	"bonjoski/argus/internal/service"
 )
+
+// MaxDaemonFrameBytes bounds individual IPC JSON line payloads to 1 MiB to prevent OOM DoS.
+const MaxDaemonFrameBytes = 1 << 20
 
 // Server represents the resident Argus IPC daemon server.
 type Server struct {
@@ -48,8 +53,30 @@ func NewServer(socketPath, pidPath string, vettingService *service.VettingServic
 
 // Start begins listening on the Unix domain socket and serving connections.
 func (s *Server) Start(ctx context.Context) error {
-	// Clean up stale socket file if it exists
-	if _, err := os.Stat(s.socketPath); err == nil {
+	parentDir := filepath.Dir(s.socketPath)
+	if err := os.MkdirAll(parentDir, 0700); err != nil {
+		return fmt.Errorf("failed to create socket parent directory %s: %w", parentDir, err)
+	}
+	if filepath.Base(parentDir) == ".argus" {
+		if err := procident.VerifyFileOwnerAndNotSymlink(parentDir); err != nil {
+			return fmt.Errorf("unsafe socket directory %s: %w", parentDir, err)
+		}
+		if err := os.Chmod(parentDir, 0700); err != nil {
+			return fmt.Errorf("failed to set 0700 permissions on %s: %w", parentDir, err)
+		}
+	}
+
+	// Safely inspect and clean up stale socket file if it exists (refuse symlinks or non-sockets!)
+	if fi, err := os.Lstat(s.socketPath); err == nil {
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to remove symlinked socket path %s", s.socketPath)
+		}
+		if fi.Mode()&os.ModeSocket == 0 {
+			return fmt.Errorf("refusing to overwrite non-socket file at %s", s.socketPath)
+		}
+		if err := procident.VerifyFileOwnerAndNotSymlink(s.socketPath); err != nil {
+			return fmt.Errorf("refusing to remove foreign stale socket %s: %w", s.socketPath, err)
+		}
 		if err := os.Remove(s.socketPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove existing socket file: %w", err)
 		}
@@ -69,6 +96,10 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Write PID file
 	if s.pidPath != "" {
+		if pfi, err := os.Lstat(s.pidPath); err == nil && pfi.Mode()&os.ModeSymlink != 0 {
+			_ = l.Close()
+			return fmt.Errorf("refusing to write pid file through symlink %s", s.pidPath)
+		}
 		pidContent := fmt.Sprintf("%d\n", os.Getpid())
 		if err := os.WriteFile(s.pidPath, []byte(pidContent), 0600); err != nil {
 			_ = l.Close()
@@ -109,17 +140,37 @@ func (s *Server) Start(ctx context.Context) error {
 
 func (s *Server) handleConnection(conn net.Conn) {
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 
-	reader := bufio.NewReader(conn)
+	// Authenticate local Unix peer UID via GetsockoptXucred (Darwin) / SO_PEERCRED (Linux)
+	if err := procident.VerifyUnixPeerUID(conn); err != nil {
+		writer := bufio.NewWriter(conn)
+		_ = s.sendResponse(writer, Response{
+			Success: false,
+			Error:   fmt.Sprintf("unauthorized peer credentials: %v", err),
+		})
+		return
+	}
+
+	limited := io.LimitReader(conn, MaxDaemonFrameBytes+1)
+	lr, _ := limited.(*io.LimitedReader)
+	reader := bufio.NewReader(limited)
 	writer := bufio.NewWriter(conn)
 
 	for {
+		if lr != nil {
+			lr.N = MaxDaemonFrameBytes + 1
+		}
+
 		line, err := reader.ReadBytes('\n')
+		if len(line) > MaxDaemonFrameBytes || (errors.Is(err, io.EOF) && lr != nil && lr.N == 0) {
+			_ = s.sendResponse(writer, Response{
+				Success: false,
+				Error:   fmt.Sprintf("daemon IPC frame exceeds maximum allowed size (%d bytes)", MaxDaemonFrameBytes),
+			})
+			return
+		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) && !errors.Is(err, net.ErrClosed) {
-				// Non-EOF error
-			}
 			return
 		}
 
@@ -223,6 +274,27 @@ func (s *Server) processRequest(req Request) Response {
 		}
 
 	case ActionShutdown:
+		return Response{
+			Success:   true,
+			LatencyMs: time.Since(start).Milliseconds(),
+		}
+
+	case ActionRegisterAgent:
+		if s.telemetryBus == nil || s.telemetryBus.Killswitch() == nil {
+			return Response{Success: false, Error: "killswitch coordinator unavailable"}
+		}
+		if err := s.telemetryBus.Killswitch().RegisterAgentPID(req.TargetPID); err != nil {
+			return Response{Success: false, Error: err.Error()}
+		}
+		return Response{
+			Success:   true,
+			LatencyMs: time.Since(start).Milliseconds(),
+		}
+
+	case ActionUnregisterAgent:
+		if s.telemetryBus != nil && s.telemetryBus.Killswitch() != nil {
+			s.telemetryBus.Killswitch().UnregisterAgentPID(req.TargetPID)
+		}
 		return Response{
 			Success:   true,
 			LatencyMs: time.Since(start).Milliseconds(),

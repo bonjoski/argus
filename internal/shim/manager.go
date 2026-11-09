@@ -10,16 +10,19 @@ import (
 	"bonjoski/argus/internal/model"
 )
 
-// SupportedTools lists all package manager CLI commands intercepted by Argus shims.
+// SupportedTools lists all package manager and ephemeral runner CLI commands intercepted by Argus shims.
 var SupportedTools = []string{
 	"npm",
 	"npx",
 	"pnpm",
 	"yarn",
 	"bun",
+	"bunx",
 	"pip",
 	"pip3",
+	"pipx",
 	"uv",
+	"uvx",
 	"cargo",
 	"go",
 	"gem",
@@ -88,46 +91,65 @@ func Status(shimDir string) ShimStatus {
 	return stat
 }
 
-// Install writes executable shims to the specified directory.
+// resolveTrustedArgusBinary resolves and validates the absolute path to the argus binary
+// to embed immutably inside generated shim scripts (blocking ARGUS_BIN env hijacking).
+func resolveTrustedArgusBinary(argusBin string) (string, error) {
+	candidate := strings.TrimSpace(argusBin)
+	if candidate == "" {
+		execPath, err := os.Executable()
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve current argus executable path: %w", err)
+		}
+		candidate = execPath
+	}
+
+	if strings.ContainsAny(candidate, "\x00\r\n`$") {
+		return "", fmt.Errorf("refusing unsafe characters in argus binary path %q", candidate)
+	}
+
+	absPath, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path for argus binary %q: %w", candidate, err)
+	}
+	if resolved, evalErr := filepath.EvalSymlinks(absPath); evalErr == nil {
+		absPath = resolved
+	}
+	if !filepath.IsAbs(absPath) {
+		return "", fmt.Errorf("argus binary path %q is not absolute", absPath)
+	}
+	return filepath.Clean(absPath), nil
+}
+
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// Install writes executable shims to the specified directory with a hardcoded absolute argus binary path.
 func Install(shimDir, argusBin string) error {
-	if err := os.MkdirAll(shimDir, 0755); err != nil {
+	resolvedBin, err := resolveTrustedArgusBinary(argusBin)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(shimDir, 0700); err != nil {
 		return fmt.Errorf("failed to create shim directory %s: %w", shimDir, err)
 	}
 
-	if argusBin == "" {
-		execPath, err := os.Executable()
-		if err == nil {
-			argusBin = execPath
-		} else {
-			argusBin = "argus"
-		}
-	}
+	quotedBin := shellSingleQuote(resolvedBin)
 
 	for _, tool := range SupportedTools {
 		shimPath := filepath.Join(shimDir, tool)
-		content := fmt.Sprintf(`#!/bin/sh
-# Argus Pre-Flight Subshell Interception Shim
-ARGUS_BIN="${ARGUS_BIN:-%s}"
-if ! command -v "$ARGUS_BIN" >/dev/null 2>&1; then
-    ARGUS_BIN="argus"
-fi
-exec "$ARGUS_BIN" shim exec %s "$@"
-`, argusBin, tool)
+		content := fmt.Sprintf("#!/bin/sh\n# Argus Pre-Flight Subshell Interception Shim (immutable binary target)\nexec %s shim exec %s \"$@\"\n", quotedBin, tool)
 
 		if err := os.WriteFile(shimPath, []byte(content), 0755); err != nil {
 			return fmt.Errorf("failed to write shim for %s: %w", tool, err)
 		}
 
-		// On Windows, additionally generate .cmd batch wrapper for native cmd.exe/PowerShell
+		// On Windows, additionally generate .cmd batch wrapper without %ARGUS_BIN% env override
 		if runtime.GOOS == "windows" {
 			cmdPath := filepath.Join(shimDir, tool+".cmd")
-			cmdContent := fmt.Sprintf(`@echo off
-rem Argus Pre-Flight Subshell Interception Shim for %s
-setlocal
-set "ARGUS_BIN=%%ARGUS_BIN%%"
-if "%%ARGUS_BIN%%"=="" set "ARGUS_BIN=%s"
-endlocal & "%%ARGUS_BIN%%" shim exec %s %%*
-`, tool, argusBin, tool)
+			safeWinBin := strings.ReplaceAll(resolvedBin, `"`, "")
+			cmdContent := fmt.Sprintf("@echo off\r\nrem Argus Pre-Flight Subshell Interception Shim for %s\r\n\"%s\" shim exec %s %%*\r\n", tool, safeWinBin, tool)
 			if err := os.WriteFile(cmdPath, []byte(cmdContent), 0755); err != nil {
 				return fmt.Errorf("failed to write cmd wrapper for %s: %w", tool, err)
 			}
@@ -153,124 +175,537 @@ func Uninstall(shimDir string) error {
 	return nil
 }
 
-// ExtractTargets inspects command arguments to identify package installation attempts.
+// ExtractTargets inspects command arguments to identify package installation and ephemeral runner attempts.
 func ExtractTargets(tool string, args []string) (eco model.Ecosystem, targets []string, isInstall bool) {
 	if len(args) == 0 {
 		return "", nil, false
 	}
 
 	switch tool {
-	case "npm", "npx", "pnpm", "yarn", "bun":
+	case "npx", "bunx":
+		t := parseNPXEphemeralArgs(args)
+		if len(t) > 0 {
+			return model.EcosystemNPM, t, true
+		}
+		return "", nil, false
+
+	case "npm", "pnpm", "yarn", "bun":
 		for i, arg := range args {
-			if arg == "install" || arg == "i" || arg == "add" {
-				isInstall = true
-				eco = model.EcosystemNPM
-				targets = parseInstallArgs(args[i+1:])
-				return
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			switch arg {
+			case "install", "i", "add", "ci", "clean-install", "install-clean":
+				return model.EcosystemNPM, parseInstallArgs(args[i+1:]), true
+			case "dlx", "exec", "x", "create":
+				t := parseNPXEphemeralArgs(args[i+1:])
+				if arg == "create" && len(t) > 0 && !strings.HasPrefix(t[0], "create-") && !strings.Contains(t[0], "/create-") {
+					if strings.HasPrefix(t[0], "@") && !strings.Contains(t[0], "/") {
+						t[0] = t[0] + "/create"
+					} else if !strings.HasPrefix(t[0], "@") {
+						name, ver := SplitNPMSpec(t[0])
+						if ver != "" {
+							t[0] = "create-" + name + "@" + ver
+						} else {
+							t[0] = "create-" + name
+						}
+					}
+				}
+				if len(t) > 0 {
+					return model.EcosystemNPM, t, true
+				}
+				return "", nil, false
+			default:
+				return "", nil, false
 			}
 		}
+
 	case "pip", "pip3":
 		for i, arg := range args {
 			if arg == "install" {
-				isInstall = true
-				eco = model.EcosystemPyPI
-				targets = parseInstallArgs(args[i+1:])
-				return
+				return model.EcosystemPyPI, parseInstallArgs(args[i+1:]), true
 			}
 		}
+
+	case "pipx":
+		for i, arg := range args {
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			if arg == "run" || arg == "install" {
+				t := parsePipxArgs(args[i+1:])
+				if len(t) > 0 {
+					return model.EcosystemPyPI, t, true
+				}
+			}
+			return "", nil, false
+		}
+
+	case "uvx":
+		t := parseUVXArgs(args)
+		if len(t) > 0 {
+			return model.EcosystemPyPI, t, true
+		}
+		return "", nil, false
+
 	case "uv":
 		for i, arg := range args {
-			if arg == "add" {
-				isInstall = true
-				eco = model.EcosystemPyPI
-				targets = parseInstallArgs(args[i+1:])
-				return
+			if strings.HasPrefix(arg, "-") {
+				continue
 			}
-			if arg == "pip" && i+1 < len(args) && args[i+1] == "install" {
-				isInstall = true
-				eco = model.EcosystemPyPI
-				targets = parseInstallArgs(args[i+2:])
-				return
+			switch arg {
+			case "add":
+				return model.EcosystemPyPI, parseInstallArgs(args[i+1:]), true
+			case "sync":
+				return model.EcosystemPyPI, nil, true
+			case "pip":
+				if i+1 < len(args) && (args[i+1] == "install" || args[i+1] == "sync") {
+					return model.EcosystemPyPI, parseInstallArgs(args[i+2:]), true
+				}
+				return "", nil, false
+			case "tool":
+				if i+1 < len(args) && (args[i+1] == "run" || args[i+1] == "install") {
+					t := parseUVXArgs(args[i+2:])
+					if len(t) > 0 {
+						return model.EcosystemPyPI, t, true
+					}
+				}
+				return "", nil, false
+			case "run":
+				t := parseUVRunWithOnly(args[i+1:])
+				if len(t) > 0 {
+					return model.EcosystemPyPI, t, true
+				}
+				return "", nil, false
+			default:
+				return "", nil, false
 			}
 		}
+
 	case "cargo":
 		for i, arg := range args {
-			if arg == "add" {
-				isInstall = true
-				eco = model.EcosystemCargo
-				targets = parseInstallArgs(args[i+1:])
-				return
+			if strings.HasPrefix(arg, "-") {
+				continue
 			}
+			if arg == "add" || arg == "install" {
+				return model.EcosystemCargo, parseCargoInstallArgs(args[i+1:]), true
+			}
+			return "", nil, false
 		}
+
 	case "go":
 		for i, arg := range args {
-			if arg == "get" {
-				isInstall = true
-				eco = model.EcosystemGo
-				targets = parseInstallArgs(args[i+1:])
-				return
+			if strings.HasPrefix(arg, "-") {
+				continue
+			}
+			switch arg {
+			case "get":
+				return model.EcosystemGo, parseInstallArgs(args[i+1:]), true
+			case "install", "run":
+				t := parseGoRunOrInstallArgs(args[i+1:])
+				if len(t) > 0 {
+					return model.EcosystemGo, t, true
+				}
+				return "", nil, false
+			default:
+				return "", nil, false
 			}
 		}
+
 	case "gem":
 		for i, arg := range args {
 			if arg == "install" || arg == "i" {
-				isInstall = true
-				eco = model.EcosystemRubyGems
-				targets = parseInstallArgs(args[i+1:])
-				return
+				return model.EcosystemRubyGems, parseInstallArgs(args[i+1:]), true
 			}
 		}
+
 	case "bundle":
 		for i, arg := range args {
 			if arg == "add" {
-				isInstall = true
-				eco = model.EcosystemRubyGems
-				targets = parseInstallArgs(args[i+1:])
-				return
+				return model.EcosystemRubyGems, parseInstallArgs(args[i+1:]), true
 			}
 		}
+
 	case "composer":
 		for i, arg := range args {
 			if arg == "require" || arg == "install" {
-				isInstall = true
-				eco = model.EcosystemPackagist
-				targets = parseInstallArgs(args[i+1:])
-				return
+				return model.EcosystemPackagist, parseInstallArgs(args[i+1:]), true
 			}
 		}
+
 	case "dotnet":
 		for i, arg := range args {
 			if arg == "add" && i+1 < len(args) && (args[i+1] == "package" || args[i+1] == "pkg") {
-				isInstall = true
-				eco = model.EcosystemNuGet
-				targets = parseInstallArgs(args[i+2:])
-				return
+				return model.EcosystemNuGet, parseInstallArgs(args[i+2:]), true
 			}
 		}
+
 	case "nuget":
 		for i, arg := range args {
 			if arg == "install" || arg == "add" {
-				isInstall = true
-				eco = model.EcosystemNuGet
-				targets = parseInstallArgs(args[i+1:])
-				return
+				return model.EcosystemNuGet, parseInstallArgs(args[i+1:]), true
 			}
 		}
+
 	case "swift":
 		for i, arg := range args {
 			if arg == "package" && i+1 < len(args) {
 				sub := args[i+1]
 				if sub == "add-dependency" || sub == "add" {
-					isInstall = true
-					eco = model.EcosystemSwift
-					targets = parseInstallArgs(args[i+2:])
-					return
+					return model.EcosystemSwift, parseInstallArgs(args[i+2:]), true
 				}
 			}
 		}
 	}
 
 	return "", nil, false
+}
+
+func parseNPXEphemeralArgs(args []string) []string {
+	var pkgFlags []string
+	var firstPositional string
+	skipNext := false
+	valueFlags := map[string]bool{
+		"--registry":   true,
+		"--cache":      true,
+		"--userconfig": true,
+		"--prefix":     true,
+		"-c":           true,
+		"--call":       true,
+		"--shell":      true,
+	}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--" {
+			if len(pkgFlags) == 0 && firstPositional == "" && i+1 < len(args) {
+				cand := strings.TrimSpace(args[i+1])
+				if cand != "" && !strings.HasPrefix(cand, "-") {
+					firstPositional = cand
+				}
+			}
+			break
+		}
+		if a == "-h" || a == "--help" || a == "-v" || a == "--version" {
+			if len(pkgFlags) == 0 && firstPositional == "" {
+				return nil
+			}
+			continue
+		}
+		if a == "-p" || a == "--package" {
+			if i+1 < len(args) {
+				pkgFlags = append(pkgFlags, strings.TrimSpace(args[i+1]))
+				skipNext = true
+			}
+			continue
+		}
+		if strings.HasPrefix(a, "--package=") {
+			pkgFlags = append(pkgFlags, strings.TrimSpace(strings.TrimPrefix(a, "--package=")))
+			continue
+		}
+		if strings.HasPrefix(a, "-p=") {
+			pkgFlags = append(pkgFlags, strings.TrimSpace(strings.TrimPrefix(a, "-p=")))
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			if valueFlags[strings.ToLower(a)] {
+				skipNext = true
+			}
+			continue
+		}
+		if firstPositional == "" {
+			firstPositional = strings.TrimSpace(a)
+			// Positional args after the package name are arguments to the executed package itself.
+			if len(pkgFlags) == 0 {
+				break
+			}
+		}
+	}
+
+	if len(pkgFlags) > 0 {
+		return pkgFlags
+	}
+	if firstPositional != "" {
+		return []string{firstPositional}
+	}
+	return nil
+}
+
+func parseUVXArgs(args []string) []string {
+	var fromPkg string
+	var withPkgs []string
+	var firstPositional string
+	skipNext := false
+	valueFlags := map[string]bool{
+		"--python":          true,
+		"-p":                true,
+		"--index":           true,
+		"--index-url":       true,
+		"-i":                true,
+		"--default-index":   true,
+		"--extra-index-url": true,
+		"--find-links":      true,
+		"-f":                true,
+	}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--" {
+			if fromPkg == "" && firstPositional == "" && i+1 < len(args) {
+				firstPositional = strings.TrimSpace(args[i+1])
+			}
+			break
+		}
+		if a == "-h" || a == "--help" || a == "-V" || a == "--version" {
+			if fromPkg == "" && firstPositional == "" && len(withPkgs) == 0 {
+				return nil
+			}
+			continue
+		}
+		if a == "--from" && i+1 < len(args) {
+			fromPkg = strings.TrimSpace(args[i+1])
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(a, "--from=") {
+			fromPkg = strings.TrimSpace(strings.TrimPrefix(a, "--from="))
+			continue
+		}
+		if (a == "--with" || a == "-w") && i+1 < len(args) {
+			withPkgs = append(withPkgs, strings.Split(args[i+1], ",")...)
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(a, "--with=") {
+			withPkgs = append(withPkgs, strings.Split(strings.TrimPrefix(a, "--with="), ",")...)
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			if valueFlags[strings.ToLower(a)] {
+				skipNext = true
+			}
+			continue
+		}
+		if firstPositional == "" {
+			firstPositional = strings.TrimSpace(a)
+			break
+		}
+	}
+
+	var out []string
+	if fromPkg != "" {
+		out = append(out, fromPkg)
+	} else if firstPositional != "" {
+		out = append(out, firstPositional)
+	}
+	for _, w := range withPkgs {
+		if trimmed := strings.TrimSpace(w); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func parseUVRunWithOnly(args []string) []string {
+	var withPkgs []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
+		}
+		if (a == "--with" || a == "-w") && i+1 < len(args) {
+			for _, w := range strings.Split(args[i+1], ",") {
+				if trimmed := strings.TrimSpace(w); trimmed != "" {
+					withPkgs = append(withPkgs, trimmed)
+				}
+			}
+			i++
+			continue
+		}
+		if strings.HasPrefix(a, "--with=") {
+			for _, w := range strings.Split(strings.TrimPrefix(a, "--with="), ",") {
+				if trimmed := strings.TrimSpace(w); trimmed != "" {
+					withPkgs = append(withPkgs, trimmed)
+				}
+			}
+		}
+	}
+	return withPkgs
+}
+
+func parsePipxArgs(args []string) []string {
+	var specPkg string
+	var firstPositional string
+	skipNext := false
+	valueFlags := map[string]bool{
+		"--python":     true,
+		"--index-url":  true,
+		"-i":           true,
+		"--pip-args":   true,
+		"--suffix":     true,
+		"--executable": true,
+	}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--" {
+			break
+		}
+		if a == "-h" || a == "--help" || a == "--version" {
+			return nil
+		}
+		if a == "--spec" && i+1 < len(args) {
+			specPkg = strings.TrimSpace(args[i+1])
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(a, "--spec=") {
+			specPkg = strings.TrimSpace(strings.TrimPrefix(a, "--spec="))
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			if valueFlags[strings.ToLower(a)] {
+				skipNext = true
+			}
+			continue
+		}
+		if firstPositional == "" {
+			firstPositional = strings.TrimSpace(a)
+			break
+		}
+	}
+	if specPkg != "" {
+		return []string{specPkg}
+	}
+	if firstPositional != "" {
+		return []string{firstPositional}
+	}
+	return nil
+}
+
+func parseGoRunOrInstallArgs(args []string) []string {
+	skipNext := false
+	valueFlags := map[string]bool{
+		"-c":         true,
+		"-mod":       true,
+		"-modfile":   true,
+		"-tags":      true,
+		"-ldflags":   true,
+		"-gcflags":   true,
+		"-asmflags":  true,
+		"-buildmode": true,
+		"-exec":      true,
+		"-overlay":   true,
+		"-p":         true,
+		"-pkgdir":    true,
+	}
+
+	for _, a := range args {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "-") {
+			if !strings.Contains(a, "=") && valueFlags[strings.ToLower(a)] {
+				skipNext = true
+			}
+			continue
+		}
+		cand := strings.TrimSpace(a)
+		if cand == "" {
+			continue
+		}
+		// Local source files / relative package patterns are not external module fetches
+		if cand == "." || cand == "..." || strings.HasPrefix(cand, "./") || strings.HasPrefix(cand, "../") ||
+			strings.HasPrefix(cand, "/") || strings.HasSuffix(cand, ".go") {
+			return nil
+		}
+		firstSeg := cand
+		if slashIdx := strings.IndexByte(cand, '/'); slashIdx != -1 {
+			firstSeg = cand[:slashIdx]
+		}
+		if strings.Contains(cand, "@") || strings.Contains(firstSeg, ".") {
+			return []string{cand}
+		}
+		return nil
+	}
+	return nil
+}
+
+func parseCargoInstallArgs(args []string) []string {
+	var targets []string
+	skipNext := false
+	valueFlags := map[string]bool{
+		"-f":         true,
+		"--features": true,
+		"--version":  true,
+		"--branch":   true,
+		"--tag":      true,
+		"--rev":      true,
+		"--target":   true,
+		"--root":     true,
+		"--bin":      true,
+		"--example":  true,
+		"--index":    true,
+		"--registry": true,
+	}
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		// Capture --git and --path targets so ParseAndValidatePackageSpec rejects unverified VCS/local sources!
+		if (a == "--git" || a == "--path") && i+1 < len(args) {
+			val := strings.TrimSpace(args[i+1])
+			if a == "--git" && !strings.Contains(val, "://") {
+				val = "git+" + val
+			} else if a == "--path" && !strings.HasPrefix(val, "/") && !strings.HasPrefix(val, "./") && !strings.HasPrefix(val, "../") {
+				val = "./" + val
+			}
+			targets = append(targets, val)
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(a, "--git=") {
+			targets = append(targets, strings.TrimSpace(strings.TrimPrefix(a, "--git=")))
+			continue
+		}
+		if strings.HasPrefix(a, "--path=") {
+			val := strings.TrimSpace(strings.TrimPrefix(a, "--path="))
+			if !strings.HasPrefix(val, "/") && !strings.HasPrefix(val, "./") && !strings.HasPrefix(val, "../") {
+				val = "./" + val
+			}
+			targets = append(targets, val)
+			continue
+		}
+		if strings.HasPrefix(a, "-") {
+			if !strings.Contains(a, "=") && valueFlags[strings.ToLower(a)] {
+				skipNext = true
+			}
+			continue
+		}
+		if clean := strings.TrimSpace(a); clean != "" {
+			targets = append(targets, clean)
+		}
+	}
+	return targets
 }
 
 func parseInstallArgs(args []string) []string {
@@ -297,7 +732,11 @@ func parseInstallArgs(args []string) []string {
 		"--prefix":          true,
 		"-i":                true,
 		"--index":           true,
+		"--index-url":       true,
+		"--default-index":   true,
 		"--extra-index-url": true,
+		"--trusted-host":    true,
+		"--registry":        true,
 		"-s":                true,
 		"-source":           true,
 		"--source":          true,
@@ -312,7 +751,7 @@ func parseInstallArgs(args []string) []string {
 		}
 
 		if strings.HasPrefix(a, "-") {
-			if flagsWithValues[strings.ToLower(a)] {
+			if !strings.Contains(a, "=") && flagsWithValues[strings.ToLower(a)] {
 				skipNext = true
 			}
 			continue

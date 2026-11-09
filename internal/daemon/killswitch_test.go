@@ -19,6 +19,10 @@ func TestKillswitchCoordinator_ProcessTermination(t *testing.T) {
 	targetPID := cmd.Process.Pid
 
 	kc := NewKillswitchCoordinator("")
+	if err := kc.RegisterAgentPID(targetPID); err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("failed to register test agent PID: %v", err)
+	}
 
 	critEvent := &AuditEvent{
 		TraceID:   "crit-test-trace",

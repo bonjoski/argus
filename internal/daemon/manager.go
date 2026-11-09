@@ -11,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"bonjoski/argus/internal/procident"
 )
 
 // DefaultPaths returns the standard socket path, pid path, and log path for the daemon.
@@ -21,8 +23,14 @@ func DefaultPaths() (socketPath, pidPath, logPath string, err error) {
 	}
 
 	baseDir := filepath.Join(home, ".argus")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
+	if err := os.MkdirAll(baseDir, 0700); err != nil {
 		return "", "", "", fmt.Errorf("failed to create argus directory: %w", err)
+	}
+	if err := procident.VerifyFileOwnerAndNotSymlink(baseDir); err != nil {
+		return "", "", "", fmt.Errorf("unsafe argus state directory %s: %w", baseDir, err)
+	}
+	if err := os.Chmod(baseDir, 0700); err != nil {
+		return "", "", "", fmt.Errorf("failed to enforce 0700 permissions on %s: %w", baseDir, err)
 	}
 
 	socketPath = filepath.Join(baseDir, "argus.sock")

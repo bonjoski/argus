@@ -17,6 +17,8 @@ const (
 	ActionStats           Action = "stats"
 	ActionShutdown        Action = "shutdown"
 	ActionTelemetryIngest Action = "telemetry_ingest"
+	ActionRegisterAgent   Action = "register_agent"
+	ActionUnregisterAgent Action = "unregister_agent"
 )
 
 // Request is the IPC payload sent from clients to the Argus daemon.
@@ -26,6 +28,7 @@ type Request struct {
 	Package   string          `json:"package,omitempty"`
 	Version   string          `json:"version,omitempty"`
 	NoCache   bool            `json:"no_cache,omitempty"`
+	TargetPID int             `json:"target_pid,omitempty"`
 	Telemetry *AuditEvent     `json:"telemetry,omitempty"`
 }
 

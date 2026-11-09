@@ -162,82 +162,84 @@ func Tokenize(name string) []string {
 	return tokens
 }
 
-// IsApprovedNamespace checks if a package follows legitimate community plugin naming patterns.
+var verifiedNPMOrgScopes = map[string]bool{
+	"@types":                true,
+	"@angular":              true,
+	"@babel":                true,
+	"@eslint":               true,
+	"@vitejs":               true,
+	"@rollup":               true,
+	"@nestjs":               true,
+	"@aws-sdk":              true,
+	"@google-cloud":         true,
+	"@azure":                true,
+	"@opentelemetry":        true,
+	"@vue":                  true,
+	"@sveltejs":             true,
+	"@prisma":               true,
+	"@tanstack":             true,
+	"@testing-library":      true,
+	"@playwright":           true,
+	"@modelcontextprotocol": true,
+	"@octokit":              true,
+	"@grpc":                 true,
+	"@fastify":              true,
+	"@radix-ui":             true,
+	"@vercel":               true,
+	"@cloudflare":           true,
+	"@sentry":               true,
+	"@stripe":               true,
+	"@supabase":             true,
+}
+
+// IsApprovedNamespace returns true ONLY for registry-enforced organizational scopes (e.g. curated @scope/*
+// on NPM or domain/vendor-gated namespaces), NEVER unscoped public prefixes such as pytest-*, eslint-plugin-*,
+// babel-plugin-*, vite-plugin-*, rollup-plugin-*, webpack-*, or flask-* that any attacker can register (ARG-06).
 func IsApprovedNamespace(pkgName string, eco model.Ecosystem) bool {
 	lower := strings.ToLower(strings.TrimSpace(pkgName))
 
 	switch eco {
-	case model.EcosystemPyPI:
-		patterns := []string{"pytest-", "django-", "mkdocs-", "flake8-", "sphinx-", "celery-", "wagtail-"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
 	case model.EcosystemNPM:
-		patterns := []string{"eslint-plugin-", "@types/", "babel-plugin-", "webpack-plugin-", "rollup-plugin-", "vite-plugin-", "postcss-"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
+		if !strings.HasPrefix(lower, "@") {
+			return false
 		}
-	case model.EcosystemCargo:
-		if strings.HasPrefix(lower, "cargo-") {
-			return true
+		parts := strings.SplitN(lower, "/", 2)
+		if len(parts) != 2 || parts[1] == "" {
+			return false
 		}
+		return verifiedNPMOrgScopes[parts[0]]
+
 	case model.EcosystemGo:
-		// Official Go sub-repositories, Google domains, or plugin/contrib paths
-		if strings.HasPrefix(lower, "golang.org/x/") || strings.HasPrefix(lower, "google.golang.org/") || strings.HasPrefix(lower, "github.com/golang/") || strings.Contains(lower, "/plugins/") || strings.Contains(lower, "/contrib/") {
-			return true
-		}
-	case model.EcosystemRubyGems:
-		patterns := []string{"rails-", "sprockets-", "rspec-", "capistrano-", "omniauth-"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
+		return strings.HasPrefix(lower, "golang.org/x/") ||
+			strings.HasPrefix(lower, "google.golang.org/") ||
+			strings.HasPrefix(lower, "github.com/golang/")
+
 	case model.EcosystemMaven:
-		patterns := []string{"org.springframework.boot:spring-boot-starter-", "org.apache.maven.plugins:", "org.junit.jupiter:"}
+		// Maven Central enforces reverse-DNS domain ownership for groupIds
+		patterns := []string{
+			"org.springframework.boot:",
+			"org.apache.maven.plugins:",
+			"org.junit.jupiter:",
+		}
 		for _, prefix := range patterns {
 			if strings.HasPrefix(lower, prefix) {
 				return true
 			}
 		}
+
 	case model.EcosystemPackagist:
+		// Packagist enforces vendor/organization ownership before '/'
 		patterns := []string{"symfony/", "laravel/", "doctrine/", "psr/", "illuminate/"}
 		for _, prefix := range patterns {
 			if strings.HasPrefix(lower, prefix) {
 				return true
 			}
 		}
-	case model.EcosystemNuGet:
-		patterns := []string{"microsoft.", "system.", "azure.", "amazon.", "serilog."}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
-	case model.EcosystemPub:
-		patterns := []string{"flutter_", "dart_"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
-	case model.EcosystemHex:
-		patterns := []string{"phoenix_", "ecto_", "absinthe_", "broadway_"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
+
 	case model.EcosystemSwift:
-		patterns := []string{"apple/", "swift-", "swiftui-", "combine"}
-		for _, prefix := range patterns {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
+		// SwiftPM GitHub organization ownership
+		if strings.HasPrefix(lower, "apple/") || strings.HasPrefix(lower, "https://github.com/apple/") {
+			return true
 		}
 	}
 

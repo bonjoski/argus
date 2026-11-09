@@ -68,10 +68,11 @@ func NewTelemetryBus(opts ...TelemetryBusOptions) *TelemetryBus {
 
 	// Open local telemetry log sink if path provided
 	if opt.LogSinkPath != "" {
-		_ = os.MkdirAll(filepath.Dir(opt.LogSinkPath), 0700)
-		f, err := os.OpenFile(opt.LogSinkPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-		if err == nil {
-			bus.logFile = f
+		if err := os.MkdirAll(filepath.Dir(opt.LogSinkPath), 0700); err == nil {
+			f, err := os.OpenFile(opt.LogSinkPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err == nil {
+				bus.logFile = f
+			}
 		}
 	}
 
@@ -196,6 +197,11 @@ func (b *TelemetryBus) CloudForwarder() *client.CloudForwarder {
 // Stats returns current operational metrics of the telemetry bus.
 func (b *TelemetryBus) Stats() (ingested int64, dropped int64, kills int64, revocations int64) {
 	return b.totalIngested.Load(), b.droppedEvents.Load(), b.killswitch.KillsCount(), b.killswitch.RevocationsCount()
+}
+
+// Killswitch returns the coordinator governing registered agent process containment.
+func (b *TelemetryBus) Killswitch() *KillswitchCoordinator {
+	return b.killswitch
 }
 
 // Close gracefully flushes the bus and releases file handles.

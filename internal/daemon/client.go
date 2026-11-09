@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"time"
 
 	"bonjoski/argus/internal/model"
+	"bonjoski/argus/internal/procident"
 )
 
 // Client provides an IPC client interface to interact with a resident Argus daemon.
@@ -42,12 +44,20 @@ func (c *Client) IsRunning(ctx context.Context) bool {
 }
 
 func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
+	if err := procident.VerifyFileOwnerAndNotSymlink(c.socketPath); err != nil {
+		return nil, fmt.Errorf("unsafe argus daemon socket %s: %w", c.socketPath, err)
+	}
+
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", c.socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to argus daemon socket %s: %w", c.socketPath, err)
 	}
 	defer conn.Close()
+
+	if err := procident.VerifyUnixPeerUID(conn); err != nil {
+		return nil, fmt.Errorf("daemon socket peer UID mismatch on %s: %w", c.socketPath, err)
+	}
 
 	deadline, ok := ctx.Deadline()
 	if !ok {
@@ -64,7 +74,7 @@ func (c *Client) send(ctx context.Context, req Request) (*Response, error) {
 		return nil, fmt.Errorf("failed to write request to daemon: %w", err)
 	}
 
-	reader := bufio.NewReader(conn)
+	reader := bufio.NewReader(io.LimitReader(conn, 4<<20))
 	respLine, err := reader.ReadBytes('\n')
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response from daemon: %w", err)
@@ -141,6 +151,30 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	_, err := c.send(ctx, Request{Action: ActionShutdown})
 	if err != nil {
 		return fmt.Errorf("daemon shutdown request failed: %w", err)
+	}
+	return nil
+}
+
+// RegisterAgent registers a managed child/agent PID with the daemon's killswitch table.
+func (c *Client) RegisterAgent(ctx context.Context, pid int) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	_, err := c.send(ctx, Request{Action: ActionRegisterAgent, TargetPID: pid})
+	if err != nil {
+		return fmt.Errorf("daemon register_agent failed: %w", err)
+	}
+	return nil
+}
+
+// UnregisterAgent removes a managed child/agent PID from the daemon's killswitch table.
+func (c *Client) UnregisterAgent(ctx context.Context, pid int) error {
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	_, err := c.send(ctx, Request{Action: ActionUnregisterAgent, TargetPID: pid})
+	if err != nil {
+		return fmt.Errorf("daemon unregister_agent failed: %w", err)
 	}
 	return nil
 }

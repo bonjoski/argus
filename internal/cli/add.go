@@ -92,8 +92,16 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		vettingService = service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
 	}
 
+	if regErr := shim.ValidateRegistryOverrides(tool, targets, os.Environ()); regErr != nil {
+		return fmt.Errorf("PRE-FLIGHT BLOCK: %w", regErr)
+	}
+
 	for _, spec := range targets {
-		pkgName, version := parsePackageSpec(spec)
+		pkgName, version, specErr := shim.ParseAndValidatePackageSpec(eco, spec)
+		if specErr != nil {
+			fmt.Fprintf(os.Stderr, "⛔ ARGUS PRE-FLIGHT BLOCK: Invalid or unverified specification %q: %v\n", spec, specErr)
+			os.Exit(1)
+		}
 		if pkgName == "" {
 			continue
 		}

@@ -20,12 +20,14 @@ import (
 	"bonjoski/argus/internal/sandbox"
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/shim"
+	"bonjoski/argus/internal/singleflight"
 	"bonjoski/argus/internal/vcs"
 )
 
 var (
 	customShimDir string
 	shimSandbox   bool
+	shimVetFlight singleflight.Group[*model.RiskReport]
 )
 
 func newShimCmd() *cobra.Command {
@@ -151,8 +153,40 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 		shimDir = ""
 	}
 
-	// 1. Detect if this invocation is installing packages
+	// 1. Detect if this invocation is installing packages or executing an ephemeral/manifest fetch
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		cwd = "."
+	}
+
 	eco, targets, isInstall := shim.ExtractTargets(tool, toolArgs)
+	manifestEco, manifestTargets, manifestTriggered, manifestErr := shim.ExtractManifestTargets(tool, toolArgs, cwd)
+	if manifestErr != nil {
+		fmt.Fprintf(os.Stderr, "⛔ ARGUS INTERCEPT: Manifest pre-flight inspection failed: %v\n", manifestErr)
+		os.Exit(1)
+	}
+
+	if isInstall || manifestTriggered {
+		if regErr := shim.ValidateRegistryOverrides(tool, toolArgs, os.Environ()); regErr != nil {
+			fmt.Fprintf(os.Stderr, "⛔ ARGUS INTERCEPT: %v\n", regErr)
+			os.Exit(1)
+		}
+	}
+
+	if manifestTriggered {
+		if eco == "" {
+			eco = manifestEco
+		}
+		var filtered []string
+		for _, t := range targets {
+			if t == "." && eco == model.EcosystemPyPI {
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		targets = append(filtered, manifestTargets...)
+		isInstall = true
+	}
 
 	if isInstall && len(targets) > 0 {
 		ctx := context.Background()
@@ -160,9 +194,9 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 		// Fast path: Check if resident daemon is active on IPC socket
 		var daemonClient *daemon.Client
 		if defaultSock, _, _, err := daemon.DefaultPaths(); err == nil {
-			dc := daemon.NewClient(defaultSock).WithTimeout(300 * time.Millisecond)
-			if dc.Ping(ctx) == nil {
-				daemonClient = dc
+			pingClient := daemon.NewClient(defaultSock).WithTimeout(500 * time.Millisecond)
+			if pingClient.Ping(ctx) == nil {
+				daemonClient = daemon.NewClient(defaultSock).WithTimeout(5 * time.Second)
 			}
 		}
 
@@ -185,21 +219,38 @@ func runShimExec(cmd *cobra.Command, args []string) error {
 			vettingService = service.NewVettingService(cacheStore, adapters, vcsVerifier, evaluator, 24*time.Hour)
 		}
 
+		seenSpecs := make(map[string]bool, len(targets))
 		for _, spec := range targets {
-			pkgName, version := parsePackageSpec(spec)
+			pkgName, version, specErr := shim.ParseAndValidatePackageSpec(eco, spec)
+			if specErr != nil {
+				fmt.Fprintf(os.Stderr, "⛔ ARGUS INTERCEPT: Dependency %q rejected: %v\n", spec, specErr)
+				os.Exit(1)
+			}
 			if pkgName == "" {
 				continue
 			}
 
-			var report *model.RiskReport
-			var err error
+			flightKey := fmt.Sprintf("%s:%s@%s", eco, pkgName, version)
+			if seenSpecs[flightKey] {
+				continue
+			}
+			seenSpecs[flightKey] = true
 
-			if daemonClient != nil {
-				report, err = daemonClient.Vet(ctx, eco, pkgName, version, false)
-			}
-			if report == nil && vettingService != nil {
-				report, err = vettingService.Vet(ctx, eco, pkgName, version)
-			}
+			report, err, _ := shimVetFlight.Do(flightKey, func() (*model.RiskReport, error) {
+				if daemonClient != nil {
+					rep, dErr := daemonClient.Vet(ctx, eco, pkgName, version, false)
+					if dErr == nil && rep != nil {
+						return rep, nil
+					}
+					if vettingService == nil {
+						if dErr != nil {
+							return nil, dErr
+						}
+						return nil, fmt.Errorf("daemon returned empty risk report for %s", pkgName)
+					}
+				}
+				return vettingService.Vet(ctx, eco, pkgName, version)
+			})
 
 			if err != nil {
 				// Registry not found or resolution error

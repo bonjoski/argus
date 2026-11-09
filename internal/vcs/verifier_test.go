@@ -44,7 +44,20 @@ func TestHTTPVerifier_GenericEndpoints(t *testing.T) {
 		case "/owner/ratelimited":
 			w.WriteHeader(http.StatusForbidden)
 		case "/owner/valid":
+			// Repo reachable on HEAD, but has NO reciprocal manifest -> must be INCONCLUSIVE (ARG-05)
 			w.WriteHeader(http.StatusOK)
+		case "/owner/valid/raw/HEAD/package.json":
+			w.WriteHeader(http.StatusNotFound)
+		case "/owner/verified":
+			w.WriteHeader(http.StatusOK)
+		case "/owner/verified/raw/HEAD/package.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name": "my-pkg"}`))
+		case "/owner/hijacked":
+			w.WriteHeader(http.StatusOK)
+		case "/owner/hijacked/raw/HEAD/package.json":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"name": "legit-popular-pkg"}`))
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -66,9 +79,21 @@ func TestHTTPVerifier_GenericEndpoints(t *testing.T) {
 		t.Errorf("expected INCONCLUSIVE on 403, got %v", res2.Status)
 	}
 
-	// 3. Valid repo
+	// 3. Repo exists without root manifest -> Inconclusive (never VCSStatusVerified -25 credit!)
 	res3, _ := v.Verify(ctx, model.EcosystemNPM, "my-pkg", server.URL+"/owner/valid")
-	if res3.Status != model.VCSStatusVerified {
-		t.Errorf("expected VERIFIED on 200, got %v", res3.Status)
+	if res3.Status != model.VCSStatusInconclusive {
+		t.Errorf("expected INCONCLUSIVE when no root manifest exists, got %v", res3.Status)
+	}
+
+	// 4. Repo exists WITH matching reciprocal manifest -> Verified
+	res4, _ := v.Verify(ctx, model.EcosystemNPM, "my-pkg", server.URL+"/owner/verified")
+	if res4.Status != model.VCSStatusVerified {
+		t.Errorf("expected VERIFIED when reciprocal manifest matches, got %v", res4.Status)
+	}
+
+	// 5. Repo exists with mismatched manifest -> Mismatch (spoofed VCS!)
+	res5, _ := v.Verify(ctx, model.EcosystemNPM, "my-pkg", server.URL+"/owner/hijacked")
+	if res5.Status != model.VCSStatusMismatch {
+		t.Errorf("expected MISMATCH when reciprocal manifest declares another package, got %v", res5.Status)
 	}
 }

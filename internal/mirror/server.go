@@ -174,15 +174,26 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Write PID file if configured
 	if s.cfg.PIDFile != "" {
-		_ = os.WriteFile(s.cfg.PIDFile, []byte(strconv.Itoa(os.Getpid())), 0600)
-		defer os.Remove(s.cfg.PIDFile)
+		if writeErr := os.WriteFile(s.cfg.PIDFile, []byte(strconv.Itoa(os.Getpid())), 0600); writeErr == nil {
+			defer func(p string) {
+				if rmErr := os.Remove(p); rmErr != nil && !os.IsNotExist(rmErr) {
+					return
+				}
+			}(s.cfg.PIDFile)
+		}
 	}
 
 	// Write state file if configured
 	if s.cfg.StateFile != "" {
-		stateData, _ := json.MarshalIndent(s.Stats(), "", "  ")
-		_ = os.WriteFile(s.cfg.StateFile, stateData, 0600)
-		defer os.Remove(s.cfg.StateFile)
+		if stateData, mErr := json.MarshalIndent(s.Stats(), "", "  "); mErr == nil {
+			if writeErr := os.WriteFile(s.cfg.StateFile, stateData, 0600); writeErr == nil {
+				defer func(p string) {
+					if rmErr := os.Remove(p); rmErr != nil && !os.IsNotExist(rmErr) {
+						return
+					}
+				}(s.cfg.StateFile)
+			}
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -368,16 +379,20 @@ func (s *Server) shouldBlock(ctx context.Context, eco model.Ecosystem, pkgName, 
 		}
 	}
 
-	// 3. Pre-Flight Vetting Service
+	// 3. Pre-Flight Vetting Service (Fail-Closed Mandate: ARG-04)
 	if s.cfg.VettingService == nil {
-		return false
+		s.blockRequest(w, eco, pkgName, version, 100, model.RiskLevelCritical, []string{
+			"Argus mirror fail-closed: pre-flight vetting service is uninitialized",
+		})
+		return true
 	}
 
 	report, err := s.cfg.VettingService.Vet(ctx, eco, pkgName, version)
 	if err != nil {
-		// If vetting resolution failed due to missing package, allow request to pass through
-		// so upstream returns authentic 404
-		return false
+		s.blockRequest(w, eco, pkgName, version, 100, model.RiskLevelCritical, []string{
+			fmt.Sprintf("Argus mirror fail-closed: pre-flight vetting resolution failed (%v)", err),
+		})
+		return true
 	}
 
 	// Check author against allowlist

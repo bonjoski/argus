@@ -110,11 +110,9 @@ func (a *NPMAdapter) FetchProvenance(ctx context.Context, pkgName, version strin
 		return nil, "", fmt.Errorf("failed to parse npm response: %w", err)
 	}
 
-	targetVersion := version
-	if targetVersion == "" || targetVersion == "latest" {
-		if latest, ok := doc.DistTags["latest"]; ok {
-			targetVersion = latest
-		}
+	targetVersion, verDoc, err := ResolveNPMVersion(version, doc.DistTags, doc.Versions)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve version %q for npm package %q: %w", version, pkgName, err)
 	}
 
 	prov := &model.PackageProvenance{
@@ -137,38 +135,33 @@ func (a *NPMAdapter) FetchProvenance(ctx context.Context, pkgName, version strin
 		}
 	}
 
-	// Parse Version-specific details
-	if verDoc, ok := doc.Versions[targetVersion]; ok {
-		prov.IntegrityHash = verDoc.Dist.Integrity
-		if prov.IntegrityHash == "" && verDoc.Dist.Shasum != "" {
-			prov.IntegrityHash = "sha1-" + verDoc.Dist.Shasum
-		}
-		prov.TarballURL = verDoc.Dist.Tarball
+	// Parse Version-specific details from concrete resolved version entry
+	prov.IntegrityHash = verDoc.Dist.Integrity
+	if prov.IntegrityHash == "" && verDoc.Dist.Shasum != "" {
+		prov.IntegrityHash = "sha1-" + verDoc.Dist.Shasum
+	}
+	prov.TarballURL = verDoc.Dist.Tarball
 
-		// Check for dangerous install scripts
-		for scriptName := range verDoc.Scripts {
-			if scriptName == "preinstall" || scriptName == "install" || scriptName == "postinstall" {
-				prov.HasInstallScripts = true
-				break
-			}
+	// Check for dangerous install scripts
+	for scriptName := range verDoc.Scripts {
+		if scriptName == "preinstall" || scriptName == "install" || scriptName == "postinstall" {
+			prov.HasInstallScripts = true
+			break
 		}
+	}
 
-		// Check for npm --provenance (Sigstore / GitHub Actions OIDC)
-		// Dist.Signatures are standard npm registry signatures attached to all packages.
-		// Only dist.attestations indicates authentic Sigstore / GitHub Actions OIDC provenance.
-		if verDoc.Dist.Attestations != nil && (verDoc.Dist.Attestations.Provenance != nil || verDoc.Dist.Attestations.URL != "") {
-			prov.HasSigstoreProvenance = true
-		}
+	// Check for npm --provenance (Sigstore / GitHub Actions OIDC)
+	// Dist.Signatures are standard npm registry signatures attached to all packages.
+	// Only dist.attestations indicates authentic Sigstore / GitHub Actions OIDC provenance.
+	if verDoc.Dist.Attestations != nil && (verDoc.Dist.Attestations.Provenance != nil || verDoc.Dist.Attestations.URL != "") {
+		prov.HasSigstoreProvenance = true
 	}
 
 	// Parse Repository URL
 	prov.RepositoryURL = parseRepoURL(doc.Repository)
 
 	// Detect npm security placeholder / tombstone packages (e.g. 0.0.1-security)
-	var verDesc string
-	if verDoc, ok := doc.Versions[targetVersion]; ok {
-		verDesc = verDoc.Description
-	}
+	verDesc := verDoc.Description
 	if targetVersion == "0.0.1-security" || strings.HasSuffix(targetVersion, "-security") ||
 		doc.Description == "security holding package" || verDesc == "security holding package" ||
 		strings.Contains(prov.RepositoryURL, "github.com/npm/security-holder") {

@@ -29,6 +29,7 @@ import (
 	"bonjoski/argus/internal/registry"
 	"bonjoski/argus/internal/sanitizer"
 	"bonjoski/argus/internal/service"
+	"bonjoski/argus/internal/shim"
 	"bonjoski/argus/internal/vcs"
 )
 
@@ -72,22 +73,7 @@ func newVetCmd() *cobra.Command {
 }
 
 func parsePackageSpec(spec string) (name, version string) {
-	spec = strings.TrimSpace(spec)
-	if strings.HasPrefix(spec, "@") {
-		// Scoped package like @scope/pkg@1.0.0
-		rest := spec[1:]
-		atIdx := strings.LastIndex(rest, "@")
-		if atIdx != -1 {
-			return "@" + rest[:atIdx], rest[atIdx+1:]
-		}
-		return spec, ""
-	}
-
-	atIdx := strings.Index(spec, "@")
-	if atIdx != -1 {
-		return spec[:atIdx], spec[atIdx+1:]
-	}
-	return spec, ""
+	return shim.SplitNPMSpec(spec)
 }
 
 func runVet(cmd *cobra.Command, args []string) error {
@@ -139,7 +125,10 @@ func runVet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unsupported ecosystem %q (supported: npm, pypi, cargo, go, rubygems, maven, packagist, nuget, pub, hex, swift)", ecoStr)
 	}
 
-	pkgName, version := parsePackageSpec(args[1])
+	pkgName, version, specErr := shim.ParseAndValidatePackageSpec(eco, args[1])
+	if specErr != nil {
+		return fmt.Errorf("blocked or invalid package specification %q: %w", args[1], specErr)
+	}
 	if pkgName == "" {
 		return fmt.Errorf("invalid package specification: %s", args[1])
 	}
@@ -437,7 +426,7 @@ func runVetLockfile(cmd *cobra.Command, filePath string) error {
 				}
 
 				if rep == nil {
-					rep, vErr = vettingService.Vet(ctx, targetEco, dep.Name, dep.Version)
+					rep, vErr = vettingService.VetWithIntegrity(ctx, targetEco, dep.Name, dep.Version, dep.IntegrityHash)
 				}
 
 				if vErr != nil {

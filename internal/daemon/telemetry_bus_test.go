@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -105,12 +106,25 @@ func TestTelemetryBus_CriticalEventPriority(t *testing.T) {
 		})
 	}
 
-	// Ingest CRITICAL event: must succeed and not be dropped
+	// Spawn and register a real managed child process so killswitch containment is authorized
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start child process: %v", err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	if err := bus.Killswitch().RegisterAgentPID(cmd.Process.Pid); err != nil {
+		t.Fatalf("failed to register child PID: %v", err)
+	}
+
+	// Ingest CRITICAL event: must succeed, terminate registered child, and not be dropped
 	critEv := &AuditEvent{
 		TraceID:   "crit-1",
 		EventType: "syscall.violation",
 		Severity:  SeverityCritical,
-		TargetPID: 999999,
+		TargetPID: cmd.Process.Pid,
 	}
 
 	if err := bus.Ingest(critEv); err != nil {

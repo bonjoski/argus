@@ -20,6 +20,7 @@ type Store interface {
 	SetProvenance(ctx context.Context, prov *model.PackageProvenance, etag string, ttl time.Duration) error
 
 	GetReport(ctx context.Context, eco model.Ecosystem, pkg, version string) (*model.RiskReport, string, bool, error)
+	GetReportWithIntegrity(ctx context.Context, eco model.Ecosystem, pkg, version, expectedIntegrity string) (*model.RiskReport, string, bool, error)
 	SetReport(ctx context.Context, report *model.RiskReport, etag string, ttl time.Duration) error
 
 	Prune(ctx context.Context) (int64, error)

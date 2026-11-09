@@ -122,8 +122,9 @@ func TestEngine_MO04_ApprovedNamespace(t *testing.T) {
 	engine := DefaultEngine()
 
 	prov := &model.PackageProvenance{
-		Name:      "pytest-fastapi-deps",
-		Ecosystem: model.EcosystemPyPI,
+		Name:      "@types/express-session",
+		Ecosystem: model.EcosystemNPM,
+		IsScoped:  true,
 	}
 
 	report := engine.Evaluate(prov)
@@ -135,13 +136,24 @@ func TestEngine_MO04_ApprovedNamespace(t *testing.T) {
 		}
 	}
 	if !foundMO04 {
-		t.Errorf("expected MO-04 (Approved Namespace) to trigger for pytest-fastapi-deps")
+		t.Errorf("expected MO-04 (Approved Namespace) to trigger for registry-enforced @types/express-session")
 	}
 
-	// Verify that HR-06 was NOT triggered due to exemption
+	// Verify that HR-06 was NOT triggered due to verified org scope exemption
 	for _, p := range report.Penalties {
 		if p.RuleID == "HR-06" && p.Triggered {
-			t.Errorf("expected HR-06 to be suppressed for approved namespace plugin")
+			t.Errorf("expected HR-06 to be suppressed for verified org scope @types/express-session")
+		}
+	}
+
+	// Verify unscoped public prefix (pytest-*) does NOT receive MO-04 credit (ARG-06)
+	unscopedReport := engine.Evaluate(&model.PackageProvenance{
+		Name:      "pytest-fastapi-auth",
+		Ecosystem: model.EcosystemPyPI,
+	})
+	for _, o := range unscopedReport.Offsets {
+		if o.OffsetID == "MO-04" && o.Triggered {
+			t.Errorf("MO-04 must NOT trigger for unscoped public prefix pytest-fastapi-auth")
 		}
 	}
 }

@@ -21,6 +21,10 @@ func TestAdversarial_KillswitchImmediateProcessTermination(t *testing.T) {
 	targetPID := cmd.Process.Pid
 
 	kc := daemon.NewKillswitchCoordinator("")
+	if err := kc.RegisterAgentPID(targetPID); err != nil {
+		_ = cmd.Process.Kill()
+		t.Fatalf("failed to register test agent PID: %v", err)
+	}
 
 	tripwireEvent := &daemon.AuditEvent{
 		TraceID:   "tripwire-01",
