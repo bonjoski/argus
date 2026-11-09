@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/bonjoski/shield v0.2.1
-	github.com/bonjoski/stoneward v0.1.0
+	github.com/bonjoski/stoneward v0.1.1
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/mattn/go-isatty v0.0.24
 	github.com/spf13/cobra v1.10.2
@@ -13,8 +13,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 )
-
-replace github.com/bonjoski/stoneward => ../stoneward
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect

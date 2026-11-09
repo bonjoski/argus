@@ -2,6 +2,8 @@ github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiE
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/bonjoski/shield v0.2.1 h1:+lqk/VasZY//NEitHLksaKj+7HVrCRc3xHIGU/ItMlw=
 github.com/bonjoski/shield v0.2.1/go.mod h1:tEaEPPXvMELlH/4Xopenj+JUfqsBTzaDGW2MfN2Oa2s=
+github.com/bonjoski/stoneward v0.1.1 h1:6IOlVqmHz2Qj7SjFDQ6FWyuYkuKSizYSbyaG37MmKHg=
+github.com/bonjoski/stoneward v0.1.1/go.mod h1:IwHRYyEjsa+UtNNeiprRPgTP33Bu2GUoeUJj+vbwRE8=
 github.com/charmbracelet/colorprofile v0.4.3 h1:QPa1IWkYI+AOB+fE+mg/5/4HRMZcaXex9t5KX76i20Q=
 github.com/charmbracelet/colorprofile v0.4.3/go.mod h1:/zT4BhpD5aGFpqQQqw7a+VtHCzu+zrQtt1zhMt9mR4Q=
 github.com/charmbracelet/lipgloss v1.1.0 h1:vYXsiLHVkK7fp74RkV7b2kq9+zDLoEU4MZoFqR/noCY=
