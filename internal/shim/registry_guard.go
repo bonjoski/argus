@@ -6,16 +6,16 @@ import (
 )
 
 var canonicalPublicRegistries = map[string]bool{
-	"https://registry.npmjs.org":         true,
-	"https://registry.yarnpkg.com":       true,
-	"https://pypi.org/simple":            true,
-	"https://index.crates.io":            true,
-	"sparse+https://index.crates.io":     true,
-	"https://proxy.golang.org":           true,
-	"https://proxy.golang.org,direct":    true,
-	"https://rubygems.org":               true,
+	"https://registry.npmjs.org":          true,
+	"https://registry.yarnpkg.com":        true,
+	"https://pypi.org/simple":             true,
+	"https://index.crates.io":             true,
+	"sparse+https://index.crates.io":      true,
+	"https://proxy.golang.org":            true,
+	"https://proxy.golang.org,direct":     true,
+	"https://rubygems.org":                true,
 	"https://api.nuget.org/v3/index.json": true,
-	"https://repo.packagist.org":         true,
+	"https://repo.packagist.org":          true,
 }
 
 func isCanonicalRegistryURL(raw string) bool {
@@ -109,25 +109,25 @@ func ValidateRegistryOverrides(tool string, args []string, env []string) error {
 
 	// 2. Inspect ambient environment variables
 	alwaysBlockedEnv := map[string]bool{
-		"PIP_EXTRA_INDEX_URL":  true,
-		"UV_EXTRA_INDEX_URL":   true,
-		"PIP_FIND_LINKS":       true,
-		"UV_FIND_LINKS":        true,
-		"PIP_TRUSTED_HOST":     true,
+		"PIP_EXTRA_INDEX_URL":   true,
+		"UV_EXTRA_INDEX_URL":    true,
+		"PIP_FIND_LINKS":        true,
+		"UV_FIND_LINKS":         true,
+		"PIP_TRUSTED_HOST":      true,
 		"NPM_CONFIG_USERCONFIG": true,
-		"GONOSUMDB":            true,
+		"GONOSUMDB":             true,
 	}
 
 	primaryRegistryEnv := map[string]bool{
-		"NPM_CONFIG_REGISTRY":            true,
-		"YARN_REGISTRY":                  true,
-		"YARN_NPM_REGISTRY_SERVER":       true,
-		"BUN_CONFIG_REGISTRY":            true,
-		"PIP_INDEX_URL":                  true,
-		"UV_INDEX_URL":                   true,
-		"UV_DEFAULT_INDEX":               true,
+		"NPM_CONFIG_REGISTRY":              true,
+		"YARN_REGISTRY":                    true,
+		"YARN_NPM_REGISTRY_SERVER":         true,
+		"BUN_CONFIG_REGISTRY":              true,
+		"PIP_INDEX_URL":                    true,
+		"UV_INDEX_URL":                     true,
+		"UV_DEFAULT_INDEX":                 true,
 		"CARGO_REGISTRIES_CRATES_IO_INDEX": true,
-		"GOPROXY":                        true,
+		"GOPROXY":                          true,
 	}
 
 	for _, kv := range env {

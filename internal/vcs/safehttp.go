@@ -11,31 +11,31 @@ import (
 )
 
 var blockedCIDRs = mustParsePrefixes([]string{
-	"0.0.0.0/8",          // Unspecified / current network
-	"10.0.0.0/8",         // RFC1918 private
-	"100.64.0.0/10",      // RFC6598 CGNAT / Tailscale
-	"127.0.0.0/8",        // Loopback
-	"169.254.0.0/16",     // Link-local / Cloud IMDS (169.254.169.254)
-	"172.16.0.0/12",      // RFC1918 private
-	"192.0.0.0/24",       // IETF protocol assignments
-	"192.0.2.0/24",       // TEST-NET-1
-	"192.168.0.0/16",     // RFC1918 private
-	"198.18.0.0/15",      // Benchmarking
-	"198.51.100.0/24",    // TEST-NET-2
-	"203.0.113.0/24",     // TEST-NET-3
-	"224.0.0.0/4",        // IPv4 Multicast
-	"240.0.0.0/4",        // Reserved / Broadcast
-	"::/128",             // IPv6 Unspecified
-	"::1/128",            // IPv6 Loopback
-	"64:ff9b::/96",       // IPv6 NAT64 well-known prefix
-	"64:ff9b:1::/48",     // IPv6 NAT64 local-use
-	"100::/64",           // Discard-only
-	"2001::/32",          // Teredo tunneling
-	"2001:db8::/32",      // Documentation
-	"2002::/16",          // 6to4 tunneling
-	"fc00::/7",           // IPv6 Unique Local (ULA, incl. AWS fd00:ec2::254 IMDSv2)
-	"fe80::/10",          // IPv6 Link-local
-	"ff00::/8",           // IPv6 Multicast
+	"0.0.0.0/8",       // Unspecified / current network
+	"10.0.0.0/8",      // RFC1918 private
+	"100.64.0.0/10",   // RFC6598 CGNAT / Tailscale
+	"127.0.0.0/8",     // Loopback
+	"169.254.0.0/16",  // Link-local / Cloud IMDS (169.254.169.254)
+	"172.16.0.0/12",   // RFC1918 private
+	"192.0.0.0/24",    // IETF protocol assignments
+	"192.0.2.0/24",    // TEST-NET-1
+	"192.168.0.0/16",  // RFC1918 private
+	"198.18.0.0/15",   // Benchmarking
+	"198.51.100.0/24", // TEST-NET-2
+	"203.0.113.0/24",  // TEST-NET-3
+	"224.0.0.0/4",     // IPv4 Multicast
+	"240.0.0.0/4",     // Reserved / Broadcast
+	"::/128",          // IPv6 Unspecified
+	"::1/128",         // IPv6 Loopback
+	"64:ff9b::/96",    // IPv6 NAT64 well-known prefix
+	"64:ff9b:1::/48",  // IPv6 NAT64 local-use
+	"100::/64",        // Discard-only
+	"2001::/32",       // Teredo tunneling
+	"2001:db8::/32",   // Documentation
+	"2002::/16",       // 6to4 tunneling
+	"fc00::/7",        // IPv6 Unique Local (ULA, incl. AWS fd00:ec2::254 IMDSv2)
+	"fe80::/10",       // IPv6 Link-local
+	"ff00::/8",        // IPv6 Multicast
 })
 
 func mustParsePrefixes(raw []string) []netip.Prefix {
