@@ -87,7 +87,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if !noCache {
 		dbPath, err := cache.DefaultCachePath()
 		if err == nil {
-			cacheStore, _ = cache.NewSQLiteStore(dbPath)
+			if store, sErr := cache.NewSQLiteStore(dbPath); sErr == nil {
+				cacheStore = store
+			}
 		}
 	}
 	if cacheStore != nil {
@@ -332,7 +334,9 @@ func runASTScan(cmd *cobra.Command, paths []string) error {
 	if !noCache {
 		dbPath, err := cache.DefaultCachePath()
 		if err == nil {
-			cacheStore, _ = cache.NewSQLiteStore(dbPath)
+			if store, sErr := cache.NewSQLiteStore(dbPath); sErr == nil {
+				cacheStore = store
+			}
 		}
 	}
 	if cacheStore != nil {

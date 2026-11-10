@@ -140,6 +140,9 @@ func reportKey(eco model.Ecosystem, pkg, version string) string {
 }
 
 func (s *SQLiteStore) GetProvenance(ctx context.Context, eco model.Ecosystem, pkg, version, hash string) (*model.PackageProvenance, string, bool, error) {
+	if s == nil || s.db == nil {
+		return nil, "", false, nil
+	}
 	key := provenanceKey(eco, pkg, version, hash)
 	now := time.Now().UnixMilli()
 
@@ -174,6 +177,9 @@ func (s *SQLiteStore) GetProvenance(ctx context.Context, eco model.Ecosystem, pk
 }
 
 func (s *SQLiteStore) SetProvenance(ctx context.Context, prov *model.PackageProvenance, etag string, ttl time.Duration) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
 	key := provenanceKey(prov.Ecosystem, prov.Name, prov.ResolvedVersion, prov.IntegrityHash)
 	now := time.Now()
 	expiresAt := now.Add(ttl).UnixMilli()
@@ -201,6 +207,9 @@ func (s *SQLiteStore) GetReport(ctx context.Context, eco model.Ecosystem, pkg, v
 }
 
 func (s *SQLiteStore) GetReportWithIntegrity(ctx context.Context, eco model.Ecosystem, pkg, version, expectedIntegrity string) (*model.RiskReport, string, bool, error) {
+	if s == nil || s.db == nil {
+		return nil, "", false, nil
+	}
 	key := reportKey(eco, pkg, version)
 	now := time.Now().UnixMilli()
 
@@ -245,6 +254,9 @@ func (s *SQLiteStore) GetReportWithIntegrity(ctx context.Context, eco model.Ecos
 }
 
 func (s *SQLiteStore) SetReport(ctx context.Context, report *model.RiskReport, etag string, ttl time.Duration) error {
+	if s == nil || s.db == nil {
+		return nil
+	}
 	key := reportKey(report.Ecosystem, report.Package, report.ResolvedVersion)
 	now := time.Now()
 	expiresAt := now.Add(ttl).UnixMilli()
@@ -307,5 +319,8 @@ func (s *SQLiteStore) Stats(ctx context.Context) (*CacheStats, error) {
 }
 
 func (s *SQLiteStore) Close() error {
+	if s == nil || s.db == nil {
+		return nil
+	}
 	return s.db.Close()
 }
