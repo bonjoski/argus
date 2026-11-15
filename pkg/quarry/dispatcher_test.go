@@ -2,6 +2,7 @@ package quarry
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -152,6 +153,69 @@ func TestDispatcherDirectPush(t *testing.T) {
 		t.Fatal("Timed out waiting for push alert")
 	}
 	_ = dispatcher
+}
+
+func TestDispatcherBackpressureFailClosed(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "quarry-backpressure-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	sockPath := filepath.Join(tmpDir, "argus-bp.sock")
+	dispatcher := NewDispatcher(sockPath)
+	if err := dispatcher.Start(); err != nil {
+		t.Fatalf("Failed to start dispatcher: %v", err)
+	}
+	defer dispatcher.Stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Connect a stalled raw subscriber that reads 0 bytes
+	rawConn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("Failed to connect stalled subscriber: %v", err)
+	}
+	defer rawConn.Close()
+
+	time.Sleep(50 * time.Millisecond)
+	if dispatcher.SubscribersCount() != 1 {
+		t.Fatalf("Expected 1 subscriber, got %d", dispatcher.SubscribersCount())
+	}
+
+	// Squeezing non-critical alerts to fill socket buffer and subscriber channel buffer (100)
+	for i := 0; i < 2000; i++ {
+		_ = dispatcher.Broadcast(&Alert{
+			RuleName: "info-alert",
+			Severity: "INFO",
+			Action:   "alert",
+		})
+	}
+
+	if dispatcher.TotalDropped() == 0 {
+		t.Fatalf("Expected non-critical alerts to be dropped when buffer full")
+	}
+
+	// Now broadcast a CRITICAL killswitch alert. Since the single subscriber is saturated,
+	// it should fail-closed and return ErrBackpressureSaturated.
+	criticalAlert := &Alert{
+		RuleName: "revocation-killswitch",
+		Severity: "CRITICAL",
+		Action:   "kill",
+		AgentPID: 8888,
+	}
+
+	err = dispatcher.Broadcast(criticalAlert)
+	if err == nil {
+		t.Fatal("Expected ErrBackpressureSaturated on stalled subscriber buffer, got nil")
+	}
+	if err != ErrBackpressureSaturated {
+		t.Fatalf("Expected ErrBackpressureSaturated, got %v", err)
+	}
+
+	if dispatcher.BackpressureFaults() == 0 {
+		t.Errorf("Expected backpressure faults > 0, got %d", dispatcher.BackpressureFaults())
+	}
 }
 
 func BenchmarkCorrelatorIngest(b *testing.B) {
