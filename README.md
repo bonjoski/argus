@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/bonjoski/argus/actions/workflows/ci.yml"><img src="https://github.com/bonjoski/argus/actions/workflows/ci.yml/badge.svg" alt="CI Pipeline Status"/></a>
+  <a href="https://slsa.dev"><img src="https://slsa.dev/images/gh-badge-level2.svg" alt="SLSA 2"/></a>
   <a href="https://github.com/bonjoski/argus/releases/latest"><img src="https://img.shields.io/github/v/release/bonjoski/argus?color=blue&label=release" alt="Latest Release"/></a>
   <a href="https://github.com/bonjoski/argus/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"/></a>
   <a href="https://golang.org"><img src="https://img.shields.io/badge/go-1.27.3-blue.svg" alt="Go Version"/></a>
@@ -236,10 +237,16 @@ tar -xzf argus_0.8.2_linux_arm64.tar.gz
 sudo mv argus /usr/local/bin/
 ```
 
-### 2. Cryptographic Verification via Sigstore Cosign
+### 2. Cryptographic Verification & SLSA Provenance
 
-All official Argus release binaries are keylessly signed via **Sigstore Cosign** using GitHub Actions OIDC identity. You can cryptographically verify that the binary was compiled directly by the official workflow without importing any keys:
+All official Argus releases include cryptographic **SLSA v1.0 Build Provenance** and are keylessly signed via **Sigstore Cosign** using GitHub Actions OIDC identity.
 
+#### A. Verify SLSA Provenance via GitHub CLI
+```bash
+gh attestation verify argus_v0.10.1_linux_amd64.tar.gz --repo bonjoski/argus
+```
+
+#### B. Verify via Sigstore Cosign
 ```bash
 # Download checksum and signature files
 curl -LO https://github.com/bonjoski/argus/releases/download/v0.8.2/checksums.txt
@@ -254,6 +261,11 @@ cosign verify-blob \
 
 # Verify archive integrity
 sha256sum -c checksums.txt --ignore-missing
+```
+
+#### C. Verify Offline via Soulcaster
+```bash
+soulcaster verify --attestation argus.intoto.jsonl /usr/local/bin/argus
 ```
 
 ### 3. Via Go Toolchain
