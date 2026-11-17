@@ -57,6 +57,13 @@ func init() {
 	rootCmd.AddCommand(newSandboxCmd())
 	rootCmd.AddCommand(newTestCmd())
 	rootCmd.AddCommand(newExplainCmd())
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the version number of argus",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(rootCmd.Version)
+		},
+	})
 }
 
 func Execute() {
