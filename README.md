@@ -17,6 +17,9 @@
   <a href="https://sigstore.dev"><img src="https://img.shields.io/badge/cosign-keyless--signed-blueviolet.svg" alt="Cosign Keyless Signed"/></a>
 </p>
 
+> [!NOTE]
+> **Developer Tooling & Safe Harbor Scope**: Argus is strictly an unmanaged, local-workstation developer utility running on localhost as a pre-flight CLI package scanner and dependency typosquatting validator. It is not an enterprise software supply chain security platform, commercial CI/CD gatekeeper, or cloud artifact registry service.
+
 ---
 
 ## 📖 Table of Contents
@@ -40,7 +43,7 @@
   - [7. Hardware-Isolated Process & Network Sandboxing](#7-hardware-isolated-process--network-sandboxing)
   - [8. Pre-Commit Diff & Container / Kubernetes Manifest Auditing](#8-pre-commit-diff--container--kubernetes-manifest-auditing)
 - [Scoring Heuristics & Offsets](#-scoring-heuristics--offsets)
-- [Enterprise Policy Configuration (`.argusrc.yaml`)](#-enterprise-policy-configuration-argusrcyaml)
+- [Workstation Policy Configuration (`.argusrc.yaml`)](#-workstation-policy-configuration-argusrcyaml)
 - [CI/CD & GitHub Actions Integration](#-cicd--github-actions-integration)
 - [Adversarial Verification Suite](#-adversarial-verification-suite)
 - [The Sovereign Supply Chain & AI Security Suite](#-the-sovereign-supply-chain--ai-security-suite)
@@ -129,7 +132,7 @@ Argus offers multiple layers of defense depending on your development environmen
                                               |
                                               v
                               +-------------------------------+
-                              |   Enterprise Policy Engine    |
+                              |   Workstation Policy Engine   |
                               |  (.argusrc Allow/Blocklists)  |
                               +-------------------------------+
                                               |
@@ -526,9 +529,9 @@ $$\text{Final Risk Score} = \text{clamp}\left(0, 100, \sum \text{Penalties} - \s
 
 ---
 
-## ⚙️ Enterprise Policy Configuration (`.argusrc.yaml`)
+## ⚙️ Workstation Policy Configuration (`.argusrc.yaml`)
 
-Place an `.argusrc.yaml` file in your repository root or home directory (`~/.argusrc.yaml`) to enforce organization-wide governance:
+Place an `.argusrc.yaml` file in your repository root or home directory (`~/.argusrc.yaml`) to configure workstation policies:
 
 ```yaml
 version: 1
