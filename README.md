@@ -390,6 +390,21 @@ argus shim remove
 
 ---
 
+## 💡 Core Use Cases & Recipes
+
+Every primary developer use case is backed by dedicated, copy-pasteable recipes in [**`docs/use-cases/`**](docs/use-cases/README.md):
+
+| Use Case | Scenario & Quick Recipe | Full Guide |
+| :--- | :--- | :--- |
+| **Pre-Flight Slopsquat Interception** | Block hallucinated or typosquatted packages before network download:<br/>`argus exec -- npm install <pkg>` or transparent PATH shims | [Guide](docs/use-cases/01-preflight-slopsquat-interception.md) |
+| **Offline Package Reputation Inspection** | Inspect package age, release velocity, and Quarry trust metrics:<br/>`argus inspect npm express@4.18.2` | [Guide](docs/use-cases/02-offline-package-inspection.md) |
+| **Real-Time SIEM Killswitch Daemon** | Run the local event bus to broadcast instant revocation alerts:<br/>`argus daemon start && argus ping` | [Guide](docs/use-cases/03-siem-killswitch-daemon.md) |
+| **Automated CI/CD Supply Chain Gate** | Audit dependency updates in pull requests within GitHub Actions:<br/>`argus diff --manifest package.json --fail-on-risk=HIGH` | [Guide](docs/use-cases/04-cicd-supply-chain-gate.md) |
+
+---
+
+---
+
 ### 4. Sub-Millisecond Resident IPC Daemon
 
 Keep an Argus SQLite connection pool and in-memory trie structures hot in RAM to achieve **sub-millisecond (<1ms)** pre-flight vetting:
