@@ -1,0 +1,483 @@
+package quarry
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"unicode"
+)
+
+// SlopsquatAssessment holds the unified threat evaluation result for a package or install event.
+type SlopsquatAssessment struct {
+	IsSuspicious     bool           `json:"is_suspicious"`
+	IsHallucination  bool           `json:"is_hallucination"`
+	IsFreshRelease   bool           `json:"is_fresh_release"`
+	IsSuspiciousHook bool           `json:"is_suspicious_hook"`
+	TargetPackage    string         `json:"target_package,omitempty"`
+	Pattern          string         `json:"pattern,omitempty"`
+	Reasons          []string       `json:"reasons,omitempty"`
+	Details          map[string]any `json:"details,omitempty"`
+}
+
+// Canonical high-reputation standard packages across major ecosystems (npm, PyPI, Cargo).
+var popularPackages = map[string]struct{}{
+	// npm
+	"react": {}, "react-dom": {}, "react-router": {}, "react-router-dom": {},
+	"body-parser": {}, "cookie-parser": {}, "express": {}, "express-session": {},
+	"express-validator": {}, "express-rate-limit": {}, "node-fetch": {}, "cross-env": {},
+	"aws-sdk": {}, "date-fns": {}, "lodash": {}, "lodash-es": {}, "path-to-regexp": {},
+	"source-map": {}, "styled-components": {}, "socket.io": {}, "socket.io-client": {},
+	"dotenv": {}, "dotenv-safe": {}, "json-schema": {}, "fast-json-stringify": {},
+	"clean-css": {}, "color-convert": {}, "color-name": {}, "accepts": {},
+	"mime-types": {}, "type-is": {}, "content-type": {}, "content-disposition": {},
+	"cookie-signature": {}, "serve-static": {}, "serve-favicon": {}, "response-time": {},
+	"compression": {}, "cors": {}, "helmet": {}, "morgan": {}, "winston": {},
+	"axios": {}, "chalk": {}, "typescript": {}, "webpack": {}, "prettier": {},
+	"eslint": {}, "vitest": {}, "jest": {}, "mocha": {}, "commander": {},
+	"yargs": {}, "debug": {}, "uuid": {}, "glob": {}, "fs-extra": {},
+	"rimraf": {}, "semver": {}, "rxjs": {}, "tslib": {}, "next": {},
+	"vue": {}, "svelte": {}, "tailwindcss": {}, "postcss": {}, "rollup": {},
+	"vite": {}, "esbuild": {}, "babel": {}, "nodemon": {}, "supertest": {},
+	"fast-deep-equal": {}, "jsonwebtoken": {}, "passport": {}, "multer": {},
+	"sharp": {}, "prisma": {}, "mongoose": {}, "pg": {}, "mysql2": {},
+
+	// PyPI
+	"requests": {}, "flask": {}, "django": {}, "flask-cors": {}, "python-dotenv": {},
+	"beautifulsoup4": {}, "scikit-learn": {}, "numpy": {}, "pandas": {}, "scipy": {},
+	"matplotlib": {}, "pydantic": {}, "fastapi": {}, "urllib3": {}, "certifi": {},
+	"setuptools": {}, "wheel": {}, "pip": {}, "pytest": {}, "httpx": {},
+	"sqlalchemy": {}, "celery": {}, "redis": {}, "cryptography": {}, "pillow": {},
+	"boto3": {}, "botocore": {}, "click": {}, "rich": {}, "jinja2": {},
+	"pyyaml": {}, "aiohttp": {}, "tornado": {}, "gunicorn": {}, "uvicorn": {},
+
+	// Cargo
+	"serde": {}, "serde_json": {}, "tokio": {}, "anyhow": {}, "thiserror": {},
+	"clap": {}, "rand": {}, "reqwest": {}, "syn": {}, "quote": {},
+	"bytes": {}, "futures": {}, "log": {}, "tracing": {}, "regex": {},
+	"hyper": {}, "itertools": {}, "tempfile": {}, "walkdir": {}, "chrono": {},
+}
+
+// Generic hallucination tokens frequently appended or synthesized by LLMs.
+var genericHallucinationTokens = map[string]struct{}{
+	"auth":           {},
+	"authentication": {},
+	"authorize":      {},
+	"helper":         {},
+	"helpers":        {},
+	"security":       {},
+	"secure":         {},
+	"token":          {},
+	"tokens":         {},
+	"jwt":            {},
+	"oauth":          {},
+	"sso":            {},
+	"session":        {},
+	"sessions":       {},
+	"utils":          {},
+	"util":           {},
+	"utilities":      {},
+	"client":         {},
+	"service":        {},
+	"server":         {},
+	"core":           {},
+	"common":         {},
+	"base":           {},
+	"sdk":            {},
+	"lib":            {},
+	"library":        {},
+	"tools":          {},
+	"tool":           {},
+	"toolkit":        {},
+	"ai":             {},
+	"llm":            {},
+	"gpt":            {},
+	"agent":          {},
+	"api":            {},
+	"rest":           {},
+	"grpc":           {},
+	"sync":           {},
+	"async":          {},
+	"middleware":     {},
+	"handler":        {},
+	"plugin":         {},
+	"color":          {},
+	"colors":         {},
+	"validator":      {},
+	"parser":         {},
+}
+
+// Registry-enforced organizational scopes exempt from slopsquatting flags.
+var approvedRegistryScopes = map[string]bool{
+	"@types":                true,
+	"@angular":              true,
+	"@babel":                true,
+	"@eslint":               true,
+	"@vitejs":               true,
+	"@rollup":               true,
+	"@nestjs":               true,
+	"@aws-sdk":              true,
+	"@google-cloud":         true,
+	"@azure":                true,
+	"@opentelemetry":        true,
+	"@vue":                  true,
+	"@sveltejs":             true,
+	"@prisma":               true,
+	"@tanstack":             true,
+	"@testing-library":      true,
+	"@playwright":           true,
+	"@modelcontextprotocol": true,
+	"@octokit":              true,
+	"@grpc":                 true,
+	"@fastify":              true,
+	"@radix-ui":             true,
+	"@vercel":               true,
+	"@cloudflare":           true,
+	"@sentry":               true,
+	"@stripe":               true,
+	"@supabase":             true,
+}
+
+// IsApprovedNamespace checks if a package is under an organization-governed or domain-verified namespace.
+func IsApprovedNamespace(pkgName string) bool {
+	lower := strings.ToLower(strings.TrimSpace(pkgName))
+	if strings.HasPrefix(lower, "@") {
+		parts := strings.SplitN(lower, "/", 2)
+		if len(parts) == 2 && parts[1] != "" {
+			return approvedRegistryScopes[parts[0]]
+		}
+	}
+	if strings.HasPrefix(lower, "golang.org/x/") ||
+		strings.HasPrefix(lower, "google.golang.org/") ||
+		strings.HasPrefix(lower, "github.com/") {
+		return true
+	}
+	return false
+}
+
+// toKebabCase converts camelCase, snake_case, dot.case, or slash/delimited strings to kebab-case.
+func toKebabCase(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if unicode.IsUpper(r) {
+			if i > 0 && (unicode.IsLower(runes[i-1]) || (i+1 < len(runes) && unicode.IsLower(runes[i+1]))) {
+				b.WriteRune('-')
+			}
+			b.WriteRune(unicode.ToLower(r))
+		} else if r == '_' || r == '.' || r == '/' || r == ':' {
+			b.WriteRune('-')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// stripDelimiters removes delimiters (- _ . / :) to compare concatenated words.
+func stripDelimiters(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if r != '-' && r != '_' && r != '.' && r != '/' && r != ':' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// TokenizePackageName splits a package name into distinct lowercase words across kebab, snake, dot, and camelCase.
+func TokenizePackageName(name string) []string {
+	if strings.HasPrefix(name, "@") {
+		parts := strings.SplitN(name, "/", 2)
+		if len(parts) == 2 {
+			name = parts[1]
+		}
+	}
+
+	var tokens []string
+	var current strings.Builder
+
+	runes := []rune(name)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == '-' || r == '_' || r == '.' || r == '/' || r == ':' {
+			if current.Len() > 0 {
+				tokens = append(tokens, strings.ToLower(current.String()))
+				current.Reset()
+			}
+			continue
+		}
+
+		if unicode.IsUpper(r) {
+			if current.Len() > 0 && i > 0 && unicode.IsLower(runes[i-1]) {
+				tokens = append(tokens, strings.ToLower(current.String()))
+				current.Reset()
+			}
+		}
+
+		current.WriteRune(r)
+	}
+
+	if current.Len() > 0 {
+		tokens = append(tokens, strings.ToLower(current.String()))
+	}
+
+	return tokens
+}
+
+// DetectNameHallucination analyzes a package name for structural patterns typical of LLM hallucinations.
+// It detects camelCase, kebab-case, snake_case permutations of standard packages, generic token conflations,
+// and typosquats, while exempting approved namespaces and canonical standard packages.
+func DetectNameHallucination(pkgName string) (bool, string, string) {
+	cleanName := strings.TrimSpace(pkgName)
+	if cleanName == "" {
+		return false, "", ""
+	}
+
+	// 1. Exemption check
+	if IsApprovedNamespace(cleanName) {
+		return false, "", ""
+	}
+
+	// Strip scope if present for core identifier analysis
+	unscoped := cleanName
+	if strings.HasPrefix(cleanName, "@") {
+		parts := strings.SplitN(cleanName, "/", 2)
+		if len(parts) == 2 {
+			unscoped = parts[1]
+		}
+	}
+
+	lowerUnscoped := strings.ToLower(unscoped)
+
+	// 2. Exact match check: if this IS the legitimate canonical package, no hallucination!
+	if _, isPopular := popularPackages[lowerUnscoped]; isPopular && unscoped == lowerUnscoped {
+		return false, "", ""
+	}
+
+	// 3. camelCase / case / delimiter permutation of a kebab-case standard package
+	// Example: "reactDom" -> "react-dom", "nodeFetch" -> "node-fetch", "bodyParser" -> "body-parser"
+	kebab := toKebabCase(unscoped)
+	if kebab != unscoped && kebab != lowerUnscoped {
+		if _, isTarget := popularPackages[kebab]; isTarget {
+			hasUpper := false
+			for _, r := range unscoped {
+				if unicode.IsUpper(r) {
+					hasUpper = true
+					break
+				}
+			}
+			if hasUpper {
+				return true, kebab, fmt.Sprintf("camelCase permutation of standard package '%s'", kebab)
+			}
+			if strings.Contains(unscoped, "_") {
+				return true, kebab, fmt.Sprintf("snake_case permutation of standard package '%s'", kebab)
+			}
+			return true, kebab, fmt.Sprintf("delimiter permutation of standard package '%s'", kebab)
+		}
+	}
+
+	// 4. snake_case permutation of kebab-case standard package (e.g. "react_dom" -> "react-dom")
+	if strings.Contains(unscoped, "_") {
+		hyphenated := strings.ReplaceAll(lowerUnscoped, "_", "-")
+		if _, isTarget := popularPackages[hyphenated]; isTarget && hyphenated != lowerUnscoped {
+			return true, hyphenated, fmt.Sprintf("snake_case permutation of standard package '%s'", hyphenated)
+		}
+	}
+
+	// 5. Delimiter-stripped / concatenated permutation (e.g. "reactdom" vs "react-dom", "bodyparser" vs "body-parser")
+	stripped := stripDelimiters(unscoped)
+	if len(stripped) >= 6 {
+		for target := range popularPackages {
+			if stripDelimiters(target) == stripped && target != lowerUnscoped {
+				return true, target, fmt.Sprintf("delimiter-stripped permutation of standard package '%s'", target)
+			}
+		}
+	}
+
+	// 6. Generic hallucination token conflation (e.g. "chalkColor", "axios-helper", "lodash-utils", "react-security")
+	tokens := TokenizePackageName(unscoped)
+	if len(tokens) >= 2 {
+		var matchedTarget string
+		genericMatches := 0
+		popularMatches := 0
+
+		for _, tok := range tokens {
+			if _, exists := popularPackages[tok]; exists {
+				popularMatches++
+				if matchedTarget == "" {
+					matchedTarget = tok
+				}
+			} else if _, isGeneric := genericHallucinationTokens[tok]; isGeneric {
+				genericMatches++
+			}
+		}
+
+		if popularMatches >= 1 && (genericMatches >= 1 || popularMatches >= 2) {
+			return true, matchedTarget, fmt.Sprintf("conflation of standard package '%s' with common generic token", matchedTarget)
+		}
+	}
+
+	// 7. Typosquatting / Levenshtein distance check
+	nameLen := len(lowerUnscoped)
+	if nameLen >= 4 {
+		for target := range popularPackages {
+			tLen := len(target)
+			diff := nameLen - tLen
+			if diff < -2 || diff > 2 {
+				continue
+			}
+
+			dist := levenshteinDistance(lowerUnscoped, target)
+			if dist == 1 || (dist == 2 && nameLen >= 6) {
+				return true, target, fmt.Sprintf("typosquat permutation of standard package '%s' (Levenshtein distance %d)", target, dist)
+			}
+		}
+	}
+
+	return false, "", ""
+}
+
+// DetectSuspiciousAgeAndDownloads flags packages published < 72 hours ago with low/zero historical downloads.
+func DetectSuspiciousAgeAndDownloads(ageHours float64, downloads int64) (bool, string) {
+	if ageHours <= 0 {
+		return false, ""
+	}
+
+	if ageHours < 72.0 {
+		if downloads == 0 {
+			return true, fmt.Sprintf("newly published package (%.1fh old, <72h) with zero historical downloads", ageHours)
+		}
+		if downloads <= 100 {
+			return true, fmt.Sprintf("newly published package (%.1fh old, <72h) with low historical download count (%d)", ageHours, downloads)
+		}
+	}
+
+	return false, ""
+}
+
+var (
+	// Matches attempts to access ~/.ssh or SSH key artifacts
+	reSSHAccess = regexp.MustCompile(`(?i)(~|(\$HOME)|(%USERPROFILE%)|(/home/[^/\s"'\` + "`" + `]+)|(/root))?/?\.ssh(/|\b)|id_rsa|id_ed25519|id_ecdsa|id_dsa|authorized_keys|known_hosts`)
+
+	// Matches attempts to access ~/.aws credentials or config
+	reAWSAccess = regexp.MustCompile(`(?i)(~|(\$HOME)|(%USERPROFILE%)|(/home/[^/\s"'\` + "`" + `]+)|(/root))?/?\.aws(/|\b)|aws/credentials|aws/config|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AWS_SESSION_TOKEN`)
+
+	// Matches attempts to read/dump environment variables or credential tokens
+	reEnvExfil = regexp.MustCompile(`(?i)process\.env|os\.environ|/proc/self/environ|printenv\b|(\benv\b\s*(\||>))|GITHUB_TOKEN|SLACK_TOKEN|NPM_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY`)
+
+	// Matches exfiltration piping to network tools
+	reExfilPiping = regexp.MustCompile(`(?i)(\bcurl\b|\bwget\b|\bnc\b|\bbash\s+-i|/dev/tcp).*(\.ssh|\.aws|process\.env|os\.environ|printenv|AWS_|GITHUB_TOKEN|id_rsa)`)
+
+	// Matches reverse shell / socket redirection droppers in install hooks
+	reReverseShell = regexp.MustCompile(`(?i)/dev/tcp/|\bnc\s+(-e|-c|\w*e\w*)\b|\bbash\s+-i\b`)
+)
+
+// DetectSuspiciousLifecycleHook inspects preinstall/postinstall script code or commands
+// for attempts to access ~/.ssh, ~/.aws, or exfiltrate environment variables.
+func DetectSuspiciousLifecycleHook(script string) (bool, string) {
+	trimmed := strings.TrimSpace(script)
+	if trimmed == "" {
+		return false, ""
+	}
+
+	// 1. Direct exfiltration chaining check
+	if reExfilPiping.MatchString(trimmed) {
+		return true, "script hooks network command (curl/wget/nc) piping sensitive credentials"
+	}
+
+	// 2. Reverse shell / interactive socket check
+	if reReverseShell.MatchString(trimmed) {
+		return true, "script hook establishes interactive reverse shell or raw network socket (/dev/tcp, nc -e, bash -i)"
+	}
+
+	// 2. SSH key access check
+	if reSSHAccess.MatchString(trimmed) {
+		return true, "script hook attempts to access SSH key directory or artifacts (~/.ssh, id_rsa, id_ed25519)"
+	}
+
+	// 3. AWS credential access check
+	if reAWSAccess.MatchString(trimmed) {
+		return true, "script hook attempts to access AWS credentials (~/.aws/credentials, AWS_SECRET_ACCESS_KEY)"
+	}
+
+	// 4. Environment variable exfiltration check
+	if reEnvExfil.MatchString(trimmed) {
+		return true, "script hook attempts to read or harvest sensitive environment variables (process.env, printenv, tokens)"
+	}
+
+	return false, ""
+}
+
+// EvaluatePackageProvenance conducts a multi-dimensional threat assessment over package metadata and hook scripts.
+func EvaluatePackageProvenance(pkgName string, ageHours float64, downloads int64, hookScript string) *SlopsquatAssessment {
+	assessment := &SlopsquatAssessment{
+		Details: make(map[string]any),
+	}
+
+	// Dimension 1: Package Name Hallucination
+	if isHallucination, target, pattern := DetectNameHallucination(pkgName); isHallucination {
+		assessment.IsSuspicious = true
+		assessment.IsHallucination = true
+		assessment.TargetPackage = target
+		assessment.Pattern = pattern
+		assessment.Reasons = append(assessment.Reasons, pattern)
+		assessment.Details["hallucination_target"] = target
+		assessment.Details["hallucination_pattern"] = pattern
+	}
+
+	// Dimension 2: Fresh Release & Negligible Adoption (<72h, <=100 downloads)
+	if isFresh, reason := DetectSuspiciousAgeAndDownloads(ageHours, downloads); isFresh {
+		assessment.IsSuspicious = true
+		assessment.IsFreshRelease = true
+		assessment.Reasons = append(assessment.Reasons, reason)
+		assessment.Details["age_hours"] = ageHours
+		assessment.Details["downloads"] = downloads
+		assessment.Details["fresh_release_reason"] = reason
+	}
+
+	// Dimension 3: Malicious Lifecycle Hooks
+	if hookScript != "" {
+		if isSuspiciousHook, hookReason := DetectSuspiciousLifecycleHook(hookScript); isSuspiciousHook {
+			assessment.IsSuspicious = true
+			assessment.IsSuspiciousHook = true
+			assessment.Reasons = append(assessment.Reasons, hookReason)
+			assessment.Details["hook_threat"] = hookReason
+		}
+	}
+
+	return assessment
+}
+
+func levenshteinDistance(s1, s2 string) int {
+	r1, r2 := []rune(s1), []rune(s2)
+	n, m := len(r1), len(r2)
+
+	if n == 0 {
+		return m
+	}
+	if m == 0 {
+		return n
+	}
+
+	dp := make([]int, m+1)
+	for j := 0; j <= m; j++ {
+		dp[j] = j
+	}
+
+	for i := 1; i <= n; i++ {
+		prev := dp[0]
+		dp[0] = i
+		for j := 1; j <= m; j++ {
+			temp := dp[j]
+			cost := 0
+			if r1[i-1] != r2[j-1] {
+				cost = 1
+			}
+			dp[j] = minInt(dp[j]+1, minInt(dp[j-1]+1, prev+cost))
+			prev = temp
+		}
+	}
+
+	return dp[m]
+}

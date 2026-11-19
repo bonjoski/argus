@@ -130,6 +130,27 @@ func (fsm *FSM) Step(event *Event) *Alert {
 			},
 		}
 
+		for _, me := range triggeredBranch.MatchedEvents {
+			if pkg := me.GetPackageName(); pkg != "" {
+				if isSlop, target, pat := DetectNameHallucination(pkg); isSlop {
+					alert.Details["slopsquat_package"] = pkg
+					alert.Details["slopsquat_target"] = target
+					alert.Details["slopsquat_pattern"] = pat
+				}
+				if age, ok := me.GetPackageAgeHours(); ok {
+					alert.Details["package_age_hours"] = age
+				}
+				if dl, ok := me.GetDownloads(); ok {
+					alert.Details["package_downloads"] = dl
+				}
+			}
+			if hook := me.GetHookScript(); hook != "" {
+				if isSusp, ind := DetectSuspiciousLifecycleHook(hook); isSusp {
+					alert.Details["suspicious_hook_indicator"] = ind
+				}
+			}
+		}
+
 		fsm.alertHistory = append(fsm.alertHistory, alert)
 		return alert
 	}

@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// EventMatcher defines criteria to match an Event at Layer-7 or Layer-3.
+// EventMatcher defines criteria to match an Event at Layer-7, Layer-3, or Supply Chain.
 type EventMatcher struct {
 	Layer          string   `yaml:"layer" json:"layer"`
 	Action         string   `yaml:"action" json:"action"`
@@ -25,12 +25,22 @@ type EventMatcher struct {
 	ToolMatches    string   `yaml:"tool_matches,omitempty" json:"tool_matches,omitempty"`
 	CommandMatches string   `yaml:"command_matches,omitempty" json:"command_matches,omitempty"`
 
+	// Slopsquatting & Supply Chain heuristic matchers
+	PackageMatches       string `yaml:"package_matches,omitempty" json:"package_matches,omitempty"`
+	CheckSlopsquat       bool   `yaml:"check_slopsquat,omitempty" json:"check_slopsquat,omitempty"`
+	MaxAgeHours          *int   `yaml:"max_age_hours,omitempty" json:"max_age_hours,omitempty"`
+	MaxDownloads         *int   `yaml:"max_downloads,omitempty" json:"max_downloads,omitempty"`
+	SuspiciousHookAccess bool   `yaml:"suspicious_hook_access,omitempty" json:"suspicious_hook_access,omitempty"`
+	HookMatches          string `yaml:"hook_matches,omitempty" json:"hook_matches,omitempty"`
+
 	// Precompiled matchers
 	normLayer    Layer          `yaml:"-" json:"-"`
 	actionRegex  *regexp.Regexp `yaml:"-" json:"-"`
 	pathRegex    *regexp.Regexp `yaml:"-" json:"-"`
 	toolRegex    *regexp.Regexp `yaml:"-" json:"-"`
 	commandRegex *regexp.Regexp `yaml:"-" json:"-"`
+	packageRegex *regexp.Regexp `yaml:"-" json:"-"`
+	hookRegex    *regexp.Regexp `yaml:"-" json:"-"`
 }
 
 // SequenceStep represents a named causal milestone containing one or more matching events.
@@ -145,14 +155,20 @@ type CompiledStep struct {
 
 // CompiledMatcher contains optimized matching functions and regexes.
 type CompiledMatcher struct {
-	Raw          EventMatcher
-	NormLayer    Layer
-	ActionRegex  *regexp.Regexp
-	PathRegex    *regexp.Regexp
-	ToolRegex    *regexp.Regexp
-	CommandRegex *regexp.Regexp
-	DestNotIn    []string
-	DestIn       []string
+	Raw                  EventMatcher
+	NormLayer            Layer
+	ActionRegex          *regexp.Regexp
+	PathRegex            *regexp.Regexp
+	ToolRegex            *regexp.Regexp
+	CommandRegex         *regexp.Regexp
+	PackageRegex         *regexp.Regexp
+	HookRegex            *regexp.Regexp
+	DestNotIn            []string
+	DestIn               []string
+	CheckSlopsquat       bool
+	MaxAgeHours          *int
+	MaxDownloads         *int
+	SuspiciousHookAccess bool
 }
 
 // CompileRule pre-compiles regexes and normalizes patterns for a Quarry rule.
@@ -177,10 +193,14 @@ func CompileRule(r *Rule) (*CompiledRule, error) {
 
 		for j, em := range step.Events {
 			cm := CompiledMatcher{
-				Raw:       em,
-				NormLayer: NormalizeLayer(em.Layer),
-				DestNotIn: em.DestNotIn,
-				DestIn:    em.DestIn,
+				Raw:                  em,
+				NormLayer:            NormalizeLayer(em.Layer),
+				DestNotIn:            em.DestNotIn,
+				DestIn:               em.DestIn,
+				CheckSlopsquat:       em.CheckSlopsquat,
+				MaxAgeHours:          em.MaxAgeHours,
+				MaxDownloads:         em.MaxDownloads,
+				SuspiciousHookAccess: em.SuspiciousHookAccess,
 			}
 
 			if em.Action != "" {
@@ -214,6 +234,22 @@ func CompileRule(r *Rule) (*CompiledRule, error) {
 					return nil, fmt.Errorf("rule %q step %d invalid command_matches regex %q: %w", r.Name, i, em.CommandMatches, err)
 				}
 				cm.CommandRegex = re
+			}
+
+			if em.PackageMatches != "" {
+				re, err := regexp.Compile("(?i)" + em.PackageMatches)
+				if err != nil {
+					return nil, fmt.Errorf("rule %q step %d invalid package_matches regex %q: %w", r.Name, i, em.PackageMatches, err)
+				}
+				cm.PackageRegex = re
+			}
+
+			if em.HookMatches != "" {
+				re, err := regexp.Compile("(?i)" + em.HookMatches)
+				if err != nil {
+					return nil, fmt.Errorf("rule %q step %d invalid hook_matches regex %q: %w", r.Name, i, em.HookMatches, err)
+				}
+				cm.HookRegex = re
 			}
 
 			cs.Matchers[j] = cm
@@ -296,6 +332,62 @@ func (cm *CompiledMatcher) Matches(e *Event) bool {
 			return false
 		}
 		if matchesAnyDestination(e.Destination, cm.DestNotIn) {
+			return false
+		}
+	}
+
+	// 8. PackageMatches check
+	if cm.PackageRegex != nil {
+		pkgName := e.GetPackageName()
+		if pkgName == "" || !cm.PackageRegex.MatchString(pkgName) {
+			return false
+		}
+	}
+
+	// 9. CheckSlopsquat check
+	if cm.CheckSlopsquat {
+		pkgName := e.GetPackageName()
+		if pkgName == "" {
+			return false
+		}
+		isSlop, _, _ := DetectNameHallucination(pkgName)
+		if !isSlop {
+			return false
+		}
+	}
+
+	// 10. MaxAgeHours check
+	if cm.MaxAgeHours != nil {
+		age, ok := e.GetPackageAgeHours()
+		if !ok || age >= float64(*cm.MaxAgeHours) {
+			return false
+		}
+	}
+
+	// 11. MaxDownloads check
+	if cm.MaxDownloads != nil {
+		downloads, ok := e.GetDownloads()
+		if !ok || downloads > int64(*cm.MaxDownloads) {
+			return false
+		}
+	}
+
+	// 12. SuspiciousHookAccess check
+	if cm.SuspiciousHookAccess {
+		hookScript := e.GetHookScript()
+		if hookScript == "" {
+			return false
+		}
+		suspicious, _ := DetectSuspiciousLifecycleHook(hookScript)
+		if !suspicious {
+			return false
+		}
+	}
+
+	// 13. HookMatches check
+	if cm.HookRegex != nil {
+		hookScript := e.GetHookScript()
+		if hookScript == "" || !cm.HookRegex.MatchString(hookScript) {
 			return false
 		}
 	}

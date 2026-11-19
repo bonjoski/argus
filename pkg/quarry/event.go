@@ -2,16 +2,18 @@ package quarry
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// Layer represents the layer of telemetry (Layer-7 MCP tool or Layer-3 Kernel syscall).
+// Layer represents the layer of telemetry (Layer-7 MCP tool, Layer-3 Kernel syscall, or Layer Supply Chain).
 type Layer string
 
 const (
-	LayerL7MCP    Layer = "l7_mcp"
-	LayerL3Kernel Layer = "l3_kernel"
+	LayerL7MCP       Layer = "l7_mcp"
+	LayerL3Kernel    Layer = "l3_kernel"
+	LayerSupplyChain Layer = "supply_chain"
 )
 
 // NormalizeLayer maps common aliases to standardized Layer values.
@@ -22,6 +24,8 @@ func NormalizeLayer(s string) Layer {
 		return LayerL7MCP
 	case "l3_kernel", "l3", "kernel", "syscall", "os":
 		return LayerL3Kernel
+	case "supply_chain", "supplychain", "package", "dependency", "pkg":
+		return LayerSupplyChain
 	default:
 		return Layer(clean)
 	}
@@ -69,4 +73,174 @@ func (e *Event) Clone() *Event {
 func (e *Event) String() string {
 	b, _ := json.Marshal(e)
 	return string(b)
+}
+
+// GetPackageName extracts the target dependency/package name from Args, Metadata, Path, or Command.
+func (e *Event) GetPackageName() string {
+	if e == nil {
+		return ""
+	}
+	if e.Args != nil {
+		for _, key := range []string{"package", "package_name", "pkg", "pkg_name", "name", "dependency"} {
+			if pkg, ok := e.Args[key].(string); ok && strings.TrimSpace(pkg) != "" {
+				return strings.TrimSpace(pkg)
+			}
+		}
+	}
+	if e.Metadata != nil {
+		for _, key := range []string{"package", "package_name", "pkg", "name", "dependency"} {
+			if pkg, ok := e.Metadata[key]; ok && strings.TrimSpace(pkg) != "" {
+				return strings.TrimSpace(pkg)
+			}
+		}
+	}
+	// Fall back to Path if it represents a package name (not an absolute, relative, or directory path)
+	if e.Path != "" && !strings.HasPrefix(e.Path, "/") && !strings.HasPrefix(e.Path, ".") && !strings.Contains(e.Path, "/") {
+		return strings.TrimSpace(e.Path)
+	}
+	// Extract from Command if simple install syntax (e.g. "npm install <pkg>", "pip install <pkg>")
+	if e.Command != "" {
+		parts := strings.Fields(e.Command)
+		for i, part := range parts {
+			cleanPart := strings.ToLower(part)
+			if (cleanPart == "install" || cleanPart == "add" || cleanPart == "i") && i+1 < len(parts) {
+				next := parts[i+1]
+				if !strings.HasPrefix(next, "-") {
+					return next
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// GetPackageAgeHours returns the age of the package in hours, if known.
+func (e *Event) GetPackageAgeHours() (float64, bool) {
+	if e == nil {
+		return 0, false
+	}
+	if e.Args != nil {
+		for _, key := range []string{"age_hours", "package_age_hours", "age"} {
+			if val, ok := e.Args[key]; ok {
+				switch v := val.(type) {
+				case float64:
+					return v, true
+				case int:
+					return float64(v), true
+				case int64:
+					return float64(v), true
+				case string:
+					if f, err := strconv.ParseFloat(v, 64); err == nil {
+						return f, true
+					}
+				}
+			}
+		}
+		if tVal, ok := e.Args["published_at"].(time.Time); ok && !tVal.IsZero() {
+			ref := e.Timestamp
+			if ref.IsZero() {
+				ref = time.Now()
+			}
+			return ref.Sub(tVal).Hours(), true
+		}
+		if tStr, ok := e.Args["published_at"].(string); ok && tStr != "" {
+			if parsed, err := time.Parse(time.RFC3339, tStr); err == nil {
+				ref := e.Timestamp
+				if ref.IsZero() {
+					ref = time.Now()
+				}
+				return ref.Sub(parsed).Hours(), true
+			}
+		}
+	}
+	if e.Metadata != nil {
+		for _, key := range []string{"age_hours", "package_age_hours", "age"} {
+			if s, ok := e.Metadata[key]; ok {
+				if f, err := strconv.ParseFloat(s, 64); err == nil {
+					return f, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// GetDownloads returns the download count (weekly or total), if present.
+func (e *Event) GetDownloads() (int64, bool) {
+	if e == nil {
+		return 0, false
+	}
+	if e.Args != nil {
+		for _, key := range []string{"downloads", "weekly_downloads", "monthly_downloads", "download_count"} {
+			if val, ok := e.Args[key]; ok {
+				switch v := val.(type) {
+				case int64:
+					return v, true
+				case int:
+					return int64(v), true
+				case float64:
+					return int64(v), true
+				case string:
+					if d, err := strconv.ParseInt(v, 10, 64); err == nil {
+						return d, true
+					}
+				}
+			}
+		}
+	}
+	if e.Metadata != nil {
+		for _, key := range []string{"downloads", "weekly_downloads", "monthly_downloads"} {
+			if s, ok := e.Metadata[key]; ok {
+				if d, err := strconv.ParseInt(s, 10, 64); err == nil {
+					return d, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// GetHookScript returns the script code, shell command, or path associated with a lifecycle hook.
+func (e *Event) GetHookScript() string {
+	if e == nil {
+		return ""
+	}
+	if e.Args != nil {
+		for _, key := range []string{"script", "hook_script", "command", "hook_command", "script_content"} {
+			if s, ok := e.Args[key].(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+	}
+	if e.Command != "" {
+		return e.Command
+	}
+	if e.Path != "" {
+		return e.Path
+	}
+	return ""
+}
+
+// IsLifecycleHook returns true if the event represents an install lifecycle script hook.
+func (e *Event) IsLifecycleHook() bool {
+	if e == nil {
+		return false
+	}
+	act := strings.ToLower(e.Action)
+	if act == "preinstall" || act == "install" || act == "postinstall" ||
+		act == "preuninstall" || act == "postuninstall" || act == "lifecycle_script" ||
+		act == "install_hook" || act == "run_hook" {
+		return true
+	}
+	if e.Args != nil {
+		if _, ok := e.Args["hook"]; ok {
+			return true
+		}
+	}
+	if e.Metadata != nil {
+		if _, ok := e.Metadata["hook_type"]; ok {
+			return true
+		}
+	}
+	return false
 }

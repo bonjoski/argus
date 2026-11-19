@@ -1,0 +1,19 @@
+name: ai_hallucination_slopsquatting
+version: 1.0
+description: "Detects AI hallucination slopsquatting dependency attacks and malicious lifecycle hooks"
+severity: CRITICAL
+window: 60s
+action: kill
+causal_sequence:
+  - step: slopsquat_dependency_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        check_slopsquat: true
+        max_age_hours: 72
+        max_downloads: 100
+  - step: credential_theft_lifecycle_hook
+    events:
+      - layer: l7_mcp
+        action: preinstall|postinstall|install_hook|lifecycle_script|run_script
+        suspicious_hook_access: true
