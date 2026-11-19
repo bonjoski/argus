@@ -1,7 +1,9 @@
 package quarry
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"unicode"
@@ -13,6 +15,9 @@ type SlopsquatAssessment struct {
 	IsHallucination  bool           `json:"is_hallucination"`
 	IsFreshRelease   bool           `json:"is_fresh_release"`
 	IsSuspiciousHook bool           `json:"is_suspicious_hook"`
+	IsHighEntropy    bool           `json:"is_high_entropy"`
+	IsDeadbugzMCP    bool           `json:"is_deadbugz_mcp"`
+	EntropyScore     float64        `json:"entropy_score,omitempty"`
 	TargetPackage    string         `json:"target_package,omitempty"`
 	Pattern          string         `json:"pattern,omitempty"`
 	Reasons          []string       `json:"reasons,omitempty"`
@@ -371,7 +376,145 @@ var (
 
 	// Matches reverse shell / socket redirection droppers in install hooks
 	reReverseShell = regexp.MustCompile(`(?i)/dev/tcp/|\bnc\s+(-e|-c|\w*e\w*)\b|\bbash\s+-i\b`)
+
+	// Matches MCP reflection and tool introspection targeting sensitive files or environment
+	reMCPReflection = regexp.MustCompile(`(?i)(list_tools|call_tool|tools/list|tools/call|get_tool|mcp_tool).*(\.env|id_rsa|id_ed25519|keychain|process\.env|printenv|dump_env|export_env)`)
+
+	// Matches Deadbugz prompt injection directives embedded in schemas or comments
+	reDeadbugzPrompt = regexp.MustCompile(`(?i)(<system>.*(ignore previous|exfiltrate|send to|upload to|curl|wget).*</system>)|(\bignore\s+(all\s+)?previous\s+instructions\b)`)
+
+	// Matches suspicious MCP package naming conflations
+	reMCPPackageThreat = regexp.MustCompile(`(?i)^(@[^/]+/)?(mcp[-_].*(harvester|stealer|exfil|dump|secret|keychain)|.*[-_]mcp[-_](admin|root|system|eval))`)
 )
+
+// CalculateShannonEntropy computes the bit entropy of a string.
+func CalculateShannonEntropy(s string) float64 {
+	if len(s) == 0 {
+		return 0
+	}
+	counts := make(map[rune]float64)
+	for _, r := range s {
+		counts[r]++
+	}
+	length := float64(len(s))
+	var entropy float64
+	for _, count := range counts {
+		p := count / length
+		entropy -= p * math.Log2(p)
+	}
+	return entropy
+}
+
+// DetectHighEntropy checks if a synthetic package name has unusually high entropy, indicating machine-generated slop.
+func DetectHighEntropy(pkgName string) (bool, float64, string) {
+	clean := strings.TrimSpace(pkgName)
+	if strings.HasPrefix(clean, "@") {
+		parts := strings.SplitN(clean, "/", 2)
+		if len(parts) == 2 {
+			clean = parts[1]
+		}
+	}
+	stripped := stripDelimiters(clean)
+	if len(stripped) < 10 {
+		return false, 0, ""
+	}
+
+	entropy := CalculateShannonEntropy(stripped)
+	if len(stripped) >= 12 && entropy >= 3.6 {
+		vowels := 0
+		for _, r := range stripped {
+			if strings.ContainsRune("aeiouy", r) {
+				vowels++
+			}
+		}
+		vowelRatio := float64(vowels) / float64(len(stripped))
+		if vowelRatio < 0.20 || vowelRatio > 0.65 {
+			return true, entropy, fmt.Sprintf("high entropy (%.2f bits) with synthetic consonant/vowel distribution (ratio %.2f)", entropy, vowelRatio)
+		}
+	}
+
+	return false, entropy, ""
+}
+
+// DetectDeadbugzMCP detects MCP server typosquats, credential reflection hooks, and prompt manipulation.
+func DetectDeadbugzMCP(pkgName string, hookScript string, description string) (bool, string) {
+	cleanName := strings.TrimSpace(pkgName)
+	if IsApprovedNamespace(cleanName) {
+		return false, ""
+	}
+
+	// 1. Suspicious package naming
+	if reMCPPackageThreat.MatchString(cleanName) {
+		return true, fmt.Sprintf("malicious or typosquatted MCP server package identifier: %s", cleanName)
+	}
+
+	// 2. Hook reflection check
+	if hookScript != "" {
+		if reMCPReflection.MatchString(hookScript) {
+			return true, "script hook combines MCP tool reflection with sensitive credential targeting"
+		}
+		if reDeadbugzPrompt.MatchString(hookScript) {
+			return true, "script hook embeds indirect prompt injection override directive"
+		}
+	}
+
+	// 3. Description prompt injection check
+	if description != "" {
+		if reDeadbugzPrompt.MatchString(description) {
+			return true, "MCP package description embeds prompt injection directive targeting autonomous agent planner"
+		}
+	}
+
+	return false, ""
+}
+
+// MCPToolDef represents an MCP tool definition inside an MCP schema payload.
+type MCPToolDef struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"inputSchema,omitempty"`
+}
+
+// MCPSchemaPayload represents a tools/list or registration payload from an MCP server.
+type MCPSchemaPayload struct {
+	Tools []MCPToolDef `json:"tools"`
+}
+
+// EvaluateMCPSchema audits an MCP server's exposed tools for credential harvesting, reflection, and prompt injection.
+func EvaluateMCPSchema(serverName string, schemaBytes []byte) (*SlopsquatAssessment, error) {
+	assessment := &SlopsquatAssessment{
+		Details: make(map[string]any),
+	}
+
+	var payload MCPSchemaPayload
+	if err := json.Unmarshal(schemaBytes, &payload); err != nil {
+		return nil, fmt.Errorf("failed to parse MCP schema: %w", err)
+	}
+
+	suspiciousToolNames := regexp.MustCompile(`(?i)(dump_env|export_env|read_keychain|harvest_secrets|dump_ssh|get_auth_tokens|steal_credentials)`)
+
+	for _, tool := range payload.Tools {
+		// 1. Tool name matching malicious reflection
+		if suspiciousToolNames.MatchString(tool.Name) {
+			assessment.IsSuspicious = true
+			assessment.IsDeadbugzMCP = true
+			reason := fmt.Sprintf("MCP server '%s' declares dangerous secret extraction tool: %s", serverName, tool.Name)
+			assessment.Reasons = append(assessment.Reasons, reason)
+			assessment.Details["malicious_tool"] = tool.Name
+		}
+
+		// 2. Description prompt injection
+		if tool.Description != "" && reDeadbugzPrompt.MatchString(tool.Description) {
+			assessment.IsSuspicious = true
+			assessment.IsDeadbugzMCP = true
+			reason := fmt.Sprintf("MCP tool '%s' on server '%s' embeds prompt injection directive in description", tool.Name, serverName)
+			assessment.Reasons = append(assessment.Reasons, reason)
+			assessment.Details["injected_tool"] = tool.Name
+		}
+	}
+
+	return assessment, nil
+}
 
 // DetectSuspiciousLifecycleHook inspects preinstall/postinstall script code or commands
 // for attempts to access ~/.ssh, ~/.aws, or exfiltrate environment variables.
@@ -444,6 +587,23 @@ func EvaluatePackageProvenance(pkgName string, ageHours float64, downloads int64
 			assessment.Reasons = append(assessment.Reasons, hookReason)
 			assessment.Details["hook_threat"] = hookReason
 		}
+	}
+
+	// Dimension 4: High Shannon Entropy (Synthetic AI Naming)
+	if isHighEntropy, entropy, entropyReason := DetectHighEntropy(pkgName); isHighEntropy {
+		assessment.IsSuspicious = true
+		assessment.IsHighEntropy = true
+		assessment.EntropyScore = entropy
+		assessment.Reasons = append(assessment.Reasons, entropyReason)
+		assessment.Details["entropy_score"] = entropy
+	}
+
+	// Dimension 5: Deadbugz MCP Server & Tool Reflection Threat
+	if isDeadbugz, deadbugzReason := DetectDeadbugzMCP(pkgName, hookScript, ""); isDeadbugz {
+		assessment.IsSuspicious = true
+		assessment.IsDeadbugzMCP = true
+		assessment.Reasons = append(assessment.Reasons, deadbugzReason)
+		assessment.Details["deadbugz_mcp"] = deadbugzReason
 	}
 
 	return assessment
