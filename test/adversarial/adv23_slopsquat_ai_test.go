@@ -18,7 +18,7 @@ import (
 
 func TestADV23_AIHallucinationPermutations(t *testing.T) {
 	attackPackages := []struct {
-		name          string
+		name           string
 		expectedTarget string
 	}{
 		{"reactDom", "react-dom"},

@@ -267,9 +267,9 @@ func TestEvaluatePackageProvenance(t *testing.T) {
 
 func TestDetectHighEntropy(t *testing.T) {
 	cases := []struct {
-		name        string
-		pkgName     string
-		expectSlop  bool
+		name       string
+		pkgName    string
+		expectSlop bool
 	}{
 		{"HighEntropyConsonants", "zxkjqpmnrtybcv", true},
 		{"HighEntropyRandomAlnum", "x9k2p4m8q1z7w5", true},
