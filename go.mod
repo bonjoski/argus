@@ -3,7 +3,7 @@ module bonjoski/argus
 go 1.27.4
 
 require (
-	github.com/bonjoski/shield v0.2.1
+	github.com/bonjoski/shield v0.2.4
 	github.com/bonjoski/stoneward v0.1.1
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/mattn/go-isatty v0.0.24
