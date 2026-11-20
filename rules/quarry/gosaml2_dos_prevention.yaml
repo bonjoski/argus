@@ -1,0 +1,13 @@
+name: gosaml2_dos_prevention
+version: 1.0
+description: "GHSA-5hj8-q7fv-qrj6: Intercept unauthenticated panic decrypting short/empty CipherValue in gosaml2"
+severity: HIGH
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "github\\.com/russellhaering/gosaml2"
+        vulnerable_versions: "<0.9.2"
