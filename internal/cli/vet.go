@@ -31,6 +31,7 @@ import (
 	"bonjoski/argus/internal/service"
 	"bonjoski/argus/internal/shim"
 	"bonjoski/argus/internal/vcs"
+	"bonjoski/argus/pkg/ux"
 )
 
 var (
@@ -250,6 +251,17 @@ func runVet(cmd *cobra.Command, args []string) error {
 
 	if err := reporter.Render(os.Stdout, report); err != nil {
 		return fmt.Errorf("rendering output failed: %w", err)
+	}
+
+	// Emit calm UB-CLI-v2 Fix-Forward spellchecker guidance when blocked in human-readable mode
+	if isBlocked && !jsonOutput && !sarifOutput {
+		ageHours := 0.0
+		if !report.Provenance.FirstReleaseDate.IsZero() {
+			ageHours = time.Since(report.Provenance.FirstReleaseDate).Hours()
+		}
+		detailReason := fmt.Sprintf("Risk score %d/100 (%s)", report.TotalScore, report.RiskLevel)
+		ffe := ux.NewSpellcheckFixForward(string(eco), pkgName, detailReason, ageHours, report.Provenance.WeeklyDownloads)
+		_ = ffe.Render(os.Stderr, false, whyOutput)
 	}
 
 	// Action on --quarantine and --sanitize flags if tarball URL is known

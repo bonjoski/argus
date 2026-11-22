@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"bonjoski/argus/internal/version"
+	"bonjoski/argus/pkg/ux"
 )
 
 var (
@@ -16,6 +18,7 @@ var (
 
 	jsonOutput  bool
 	sarifOutput bool
+	whyOutput   bool
 	strictMode  bool
 	threshold   int
 	noCache     bool
@@ -39,6 +42,7 @@ func init() {
 	}
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output results in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&sarifOutput, "sarif", false, "Output results in OASIS SARIF v2.1.0 format")
+	rootCmd.PersistentFlags().BoolVar(&whyOutput, "why", false, "Show progressive disclosure explanation, Quarry signals, and CWE/OWASP references")
 	rootCmd.PersistentFlags().BoolVar(&strictMode, "strict", false, "Strict mode: fail on HIGH (>=60) risk scores in addition to CRITICAL")
 	rootCmd.PersistentFlags().IntVar(&threshold, "threshold", 50, "Risk score threshold to trigger hard blocking (default: 50)")
 	rootCmd.PersistentFlags().BoolVar(&noCache, "no-cache", false, "Bypass local SQLite cache and force fresh upstream query")
@@ -68,6 +72,15 @@ func init() {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		var ffe *ux.FixForwardError
+		if errors.As(err, &ffe) {
+			_ = ffe.Render(os.Stderr, jsonOutput, whyOutput)
+			code := ffe.ExitCode
+			if code == 0 {
+				code = 1
+			}
+			os.Exit(code)
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
