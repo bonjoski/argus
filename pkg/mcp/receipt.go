@@ -379,7 +379,7 @@ func EmitBLPRReceipt(ctx context.Context, signer ReceiptSigner, params ReceiptPa
 
 	ver := strings.TrimSpace(version.Version)
 	if ver == "" {
-		ver = "v0.11.0"
+		ver = "v0.11.1"
 	}
 
 	// Build initial statement, sign via signer, and include signature_mode in claims before final signing.

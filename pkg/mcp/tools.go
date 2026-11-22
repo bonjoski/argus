@@ -127,15 +127,15 @@ type VetAllowResult struct {
 }
 
 type vetFinding struct {
-	Code            string
-	ExitCode        int
-	Ecosystem       model.Ecosystem
-	PackageName     string
-	SuggestedPkg    string
-	Reason          string
-	DeepDetail      string
-	IsHostileInput  bool
-	IsASTThreat     bool
+	Code              string
+	ExitCode          int
+	Ecosystem         model.Ecosystem
+	PackageName       string
+	SuggestedPkg      string
+	Reason            string
+	DeepDetail        string
+	IsHostileInput    bool
+	IsASTThreat       bool
 	IsPolicyViolation bool
 }
 
@@ -933,10 +933,10 @@ func filterPackageFlags(tokens []string) []string {
 		"-c": true, "--constraint": true,
 		"--index-url": true, "-i": true,
 		"--extra-index-url": true,
-		"--registry": true,
-		"-t": true, "--target": true,
+		"--registry":        true,
+		"-t":                true, "--target": true,
 		"--prefix": true,
-		"--cwd": true,
+		"--cwd":    true,
 	}
 
 	var pkgs []string

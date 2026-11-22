@@ -91,10 +91,10 @@ func TestFixForward_ANSIStripping(t *testing.T) {
 
 func TestSpellchecker_LevenshteinAndJSONContract(t *testing.T) {
 	cases := []struct {
-		eco      string
-		input    string
-		wantPkg  string
-		wantCmd  string
+		eco     string
+		input   string
+		wantPkg string
+		wantCmd string
 	}{
 		{"npm", "opneai", "openai", "npm install openai"},
 		{"pypi", "reqeusts", "requests", "pip install requests"},
