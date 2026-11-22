@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"bonjoski/argus/internal/procident"
@@ -464,7 +463,7 @@ func EmitBLPRReceipt(ctx context.Context, signer ReceiptSigner, params ReceiptPa
 	finalName := fmt.Sprintf("%d-argus-%s.dsse.json", now.UnixMilli(), strings.TrimPrefix(receiptID, "rcpt_"))
 	tmpName := fmt.Sprintf(".tmp-%s-%d.json", receiptID, now.UnixNano())
 
-	f, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	f, err := root.OpenFile(tmpName, os.O_WRONLY|os.O_CREATE|os.O_EXCL|openNoFollowFlag, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("create temp receipt file: %w", err)
 	}
