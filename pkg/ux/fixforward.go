@@ -177,11 +177,15 @@ var canonicalPackagesByEcosystem = map[string][]string{
 }
 
 var knownSquatSuggestions = map[string]string{
-	"reqeusts":   "requests",
-	"express-js": "express",
-	"color-term": "chalk",
-	"lodas-node": "lodash",
-	"cryp-to":    "crypto-js",
+	"reqeusts":      "requests",
+	"express-js":    "express",
+	"color-term":    "chalk",
+	"lodas-node":    "lodash",
+	"cryp-to":       "crypto-js",
+	"open-ai-sdk":   "openai",
+	"openai-sdk":    "openai",
+	"open-ai":       "openai",
+	"anthropic-sdk": "anthropic",
 }
 
 // SuggestCanonicalPackage runs deterministic Levenshtein + casing/delimiter spellchecking

@@ -45,6 +45,7 @@ var popularPackages = map[string]struct{}{
 	"vite": {}, "esbuild": {}, "babel": {}, "nodemon": {}, "supertest": {},
 	"fast-deep-equal": {}, "jsonwebtoken": {}, "passport": {}, "multer": {},
 	"sharp": {}, "prisma": {}, "mongoose": {}, "pg": {}, "mysql2": {},
+	"openai": {}, "anthropic": {}, "langchain": {}, "langgraph": {}, "stripe": {},
 
 	// PyPI
 	"requests": {}, "flask": {}, "django": {}, "flask-cors": {}, "python-dotenv": {},
@@ -320,6 +321,18 @@ func DetectNameHallucination(pkgName string) (bool, string, string) {
 
 		if popularMatches >= 1 && (genericMatches >= 1 || popularMatches >= 2) {
 			return true, matchedTarget, fmt.Sprintf("conflation of standard package '%s' with common generic token", matchedTarget)
+		}
+
+		// 6b. Joined-prefix conflation (e.g. "open-ai-sdk" -> ["open","ai","sdk"] -> "openai" + generic "sdk")
+		if len(tokens) >= 3 {
+			joinedPrefix := tokens[0] + tokens[1]
+			if _, exists := popularPackages[joinedPrefix]; exists {
+				for _, tok := range tokens[2:] {
+					if _, isGeneric := genericHallucinationTokens[tok]; isGeneric {
+						return true, joinedPrefix, fmt.Sprintf("conflation of split standard package '%s' with common generic token", joinedPrefix)
+					}
+				}
+			}
 		}
 	}
 

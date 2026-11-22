@@ -29,6 +29,7 @@
 | **Calm Spellchecker & Fix-Forward (`UB-CLI-v2`)** | Catch AI-hallucinated or typosquatted packages with ≤3-line calm suggestions (`Did you mean <pkg>?`) and progressive disclosure (`--why`):<br/>`argus explain opneai --ecosystem npm`<br/>`argus explain reqeusts --ecosystem pypi --why`<br/>`argus explain opneai --ecosystem npm --json` | [Slopsquat Defense](docs/use-cases/05-slopsquat-ai-hallucination-defense.md) |
 | **Pre-Flight Package Vetting** | Inspect package provenance before install hooks execute:<br/>`argus vet npm express` / `argus vet pypi requests --why` | [Pre-Flight Interception](docs/use-cases/01-preflight-slopsquat-interception.md) |
 | **Offline & Lockfile Auditing** | Audit lockfiles and git diffs for tampered checksums or phantom packages:<br/>`argus vet --lockfile package-lock.json` / `argus vet --diff` | [Offline Inspection](docs/use-cases/02-offline-package-inspection.md) |
+| **Canonical MCP Server (`UB-MCP-v1` + `BLPR-v1`)** | Start the local STDIO MCP server exposing `argus_vet` for Claude Code, Cursor, and Antigravity (returns calm ≤3-line text + `FixForwardError` `structuredContent` and emits atomic signed `BLPR-v1` receipts under `FABRIAL_RECEIPT_DIR`):<br/>`argus mcp` / `argus mcp --help` | [Slopsquat Defense](docs/use-cases/05-slopsquat-ai-hallucination-defense.md) |
 
 Example calm Fix-Forward output (default ≤3 lines; add `--why` for Quarry signals & OWASP-LLM03/CWE-829 details):
 

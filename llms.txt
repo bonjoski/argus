@@ -17,3 +17,8 @@
 - Killswitch Socket: `~/.argus/argus.sock`
 - Audit Log: `~/.argus/audit.log`
 - Documentation: README.md & AGENTS.md
+
+
+## Paved-Road Integration (`2026-11-22`: Spellchecker UX, `argus mcp` & `BLPR-v1`)
+- Progressive disclosure: `argus explain [topic] [--json]` & calm Levenshtein `Did you mean?` Fix-Forward UX
+- Canonical MCP server (`UB-MCP-v1`): `argus mcp` exposes `argus_vet` (`command`, `manifest_path`, `workspace`, `strict`, `session_id`, `emit_receipt`) returning structured `FixForwardError` (`exit_code: 20` on slopsquat/malicious AST, `10` on path escape) with allowlisted `self_heal` suggestions and signed `BLPR-v1` receipts (`stage: "scaffolding_deps"`).
