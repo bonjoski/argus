@@ -1,0 +1,13 @@
+name: sevenz_rust2_zip_slip
+version: 1.0
+description: "GHSA-qh76-45cr-8xrc (CVE-2026-61725): Intercept vulnerable sevenz-rust2 versions susceptible to Zip-Slip path traversal during archive decompression"
+severity: MEDIUM
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "^sevenz-rust2$"
+        vulnerable_versions: "<0.21.1"

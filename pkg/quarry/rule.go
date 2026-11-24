@@ -27,6 +27,8 @@ type EventMatcher struct {
 
 	// Slopsquatting & Supply Chain heuristic matchers
 	PackageMatches       string `yaml:"package_matches,omitempty" json:"package_matches,omitempty"`
+	PackageNameMatches   string `yaml:"package_name_matches,omitempty" json:"package_name_matches,omitempty"`
+	VulnerableVersions   string `yaml:"vulnerable_versions,omitempty" json:"vulnerable_versions,omitempty"`
 	CheckSlopsquat       bool   `yaml:"check_slopsquat,omitempty" json:"check_slopsquat,omitempty"`
 	MaxAgeHours          *int   `yaml:"max_age_hours,omitempty" json:"max_age_hours,omitempty"`
 	MaxDownloads         *int   `yaml:"max_downloads,omitempty" json:"max_downloads,omitempty"`
@@ -162,6 +164,7 @@ type CompiledMatcher struct {
 	ToolRegex            *regexp.Regexp
 	CommandRegex         *regexp.Regexp
 	PackageRegex         *regexp.Regexp
+	VulnerableVersions   *VersionConstraintSet
 	HookRegex            *regexp.Regexp
 	DestNotIn            []string
 	DestIn               []string
@@ -236,12 +239,24 @@ func CompileRule(r *Rule) (*CompiledRule, error) {
 				cm.CommandRegex = re
 			}
 
-			if em.PackageMatches != "" {
-				re, err := regexp.Compile("(?i)" + em.PackageMatches)
+			pkgPattern := em.PackageMatches
+			if pkgPattern == "" {
+				pkgPattern = em.PackageNameMatches
+			}
+			if pkgPattern != "" {
+				re, err := regexp.Compile("(?i)" + pkgPattern)
 				if err != nil {
-					return nil, fmt.Errorf("rule %q step %d invalid package_matches regex %q: %w", r.Name, i, em.PackageMatches, err)
+					return nil, fmt.Errorf("rule %q step %d invalid package_matches regex %q: %w", r.Name, i, pkgPattern, err)
 				}
 				cm.PackageRegex = re
+			}
+
+			if em.VulnerableVersions != "" {
+				vcs, err := ParseVersionConstraintSet(em.VulnerableVersions)
+				if err != nil {
+					return nil, fmt.Errorf("rule %q step %d invalid vulnerable_versions %q: %w", r.Name, i, em.VulnerableVersions, err)
+				}
+				cm.VulnerableVersions = vcs
 			}
 
 			if em.HookMatches != "" {
@@ -340,6 +355,13 @@ func (cm *CompiledMatcher) Matches(e *Event) bool {
 	if cm.PackageRegex != nil {
 		pkgName := e.GetPackageName()
 		if pkgName == "" || !cm.PackageRegex.MatchString(pkgName) {
+			return false
+		}
+	}
+
+	// 8b. VulnerableVersions check (fail-closed if unpinned/unparseable)
+	if cm.VulnerableVersions != nil {
+		if !cm.VulnerableVersions.Matches(e.GetPackageVersion()) {
 			return false
 		}
 	}

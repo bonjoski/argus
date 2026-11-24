@@ -1,0 +1,13 @@
+name: klever_go_bls_quorum_bypass
+version: 1.0
+description: "GHSA-f9h7-4mmq-vgcq (CVE-2026-58262): Intercept vulnerable Klever Go versions counting bitmap padding bits toward BLS quorum signature verification"
+severity: HIGH
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "github\\.com/klever-io/klever-go"
+        vulnerable_versions: "<1.7.20"

@@ -75,8 +75,35 @@ func (e *Event) String() string {
 	return string(b)
 }
 
-// GetPackageName extracts the target dependency/package name from Args, Metadata, Path, or Command.
-func (e *Event) GetPackageName() string {
+// splitPackageAndVersion separates an inline package specifier (e.g. "pkg@1.2.3",
+// "github.com/nats-io/nats-server/v2@v2.12.7", "@scope/pkg@1.0.0", "pkg==0.20.0")
+// into its clean package name and version string.
+func splitPackageAndVersion(raw string) (string, string) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", ""
+	}
+	if idx := strings.Index(s, "=="); idx > 0 {
+		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+2:])
+	}
+	// Find '@' after any scoped prefix (e.g., "@scope/pkg@1.2.3")
+	searchStart := 0
+	if strings.HasPrefix(s, "@") {
+		if slash := strings.IndexByte(s, '/'); slash != -1 {
+			searchStart = slash + 1
+		} else {
+			return s, ""
+		}
+	}
+	if relIdx := strings.LastIndexByte(s[searchStart:], '@'); relIdx > 0 {
+		idx := searchStart + relIdx
+		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+1:])
+	}
+	return s, ""
+}
+
+// getRawPackageSpec extracts the raw package token (potentially including @version or ==version).
+func (e *Event) getRawPackageSpec() string {
 	if e == nil {
 		return ""
 	}
@@ -98,12 +125,12 @@ func (e *Event) GetPackageName() string {
 	if e.Path != "" && !strings.HasPrefix(e.Path, "/") && !strings.HasPrefix(e.Path, ".") && !strings.Contains(e.Path, "/") {
 		return strings.TrimSpace(e.Path)
 	}
-	// Extract from Command if simple install syntax (e.g. "npm install <pkg>", "pip install <pkg>")
+	// Extract from Command if simple install syntax (e.g. "npm install <pkg>", "go get <pkg>@<ver>", "cargo add <pkg>@<ver>")
 	if e.Command != "" {
 		parts := strings.Fields(e.Command)
 		for i, part := range parts {
 			cleanPart := strings.ToLower(part)
-			if (cleanPart == "install" || cleanPart == "add" || cleanPart == "i") && i+1 < len(parts) {
+			if (cleanPart == "install" || cleanPart == "add" || cleanPart == "i" || cleanPart == "get") && i+1 < len(parts) {
 				next := parts[i+1]
 				if !strings.HasPrefix(next, "-") {
 					return next
@@ -112,6 +139,36 @@ func (e *Event) GetPackageName() string {
 		}
 	}
 	return ""
+}
+
+// GetPackageName extracts the target dependency/package name from Args, Metadata, Path, or Command,
+// stripping any inline @version or ==version suffix.
+func (e *Event) GetPackageName() string {
+	name, _ := splitPackageAndVersion(e.getRawPackageSpec())
+	return name
+}
+
+// GetPackageVersion extracts the target package version from Args, Metadata, or inline package specifiers.
+func (e *Event) GetPackageVersion() string {
+	if e == nil {
+		return ""
+	}
+	if e.Args != nil {
+		for _, key := range []string{"version", "package_version", "pkg_version", "ver"} {
+			if v, ok := e.Args[key].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	if e.Metadata != nil {
+		for _, key := range []string{"version", "package_version", "pkg_version", "ver"} {
+			if v, ok := e.Metadata[key]; ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	_, ver := splitPackageAndVersion(e.getRawPackageSpec())
+	return ver
 }
 
 // GetPackageAgeHours returns the age of the package in hours, if known.

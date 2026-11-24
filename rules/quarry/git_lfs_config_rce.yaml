@@ -1,0 +1,13 @@
+name: git_lfs_config_rce
+version: 1.0
+description: "GHSA-x72p-hmqp-46hw (CVE-2026-105803): Intercept vulnerable Git LFS versions susceptible to arbitrary command execution via crafted Git LFS configurations"
+severity: HIGH
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "github\\.com/git-lfs/git-lfs(/v3)?"
+        vulnerable_versions: ">=1.3.0, <=2.13.3 || >=3.0.0, <3.8.1"
