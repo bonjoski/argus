@@ -14,6 +14,7 @@ import (
 	"bonjoski/argus/internal/registry"
 	"bonjoski/argus/internal/singleflight"
 	"bonjoski/argus/internal/vcs"
+	"bonjoski/argus/pkg/quarry"
 )
 
 type VettingService struct {
@@ -59,6 +60,41 @@ func (s *VettingService) Vet(ctx context.Context, eco model.Ecosystem, pkgName, 
 // stored verdicts to the concrete artifact IntegrityHash (ARG-04).
 func (s *VettingService) VetWithIntegrity(ctx context.Context, eco model.Ecosystem, pkgName, version, expectedIntegrity string) (*model.RiskReport, error) {
 	start := time.Now()
+
+	// 0. Stage -1: Offline Embedded Project Quarry SemVer Advisory Gate (<0.05ms, fail-closed)
+	quarryAlerts, quarryErr := quarry.EvaluateEmbeddedPackageAdvisory(pkgName, version, "")
+	if quarryErr != nil {
+		return nil, fmt.Errorf("embedded quarry ruleset evaluation failed (fail-closed): %w", quarryErr)
+	}
+	if len(quarryAlerts) > 0 {
+		penalties := make([]model.HeuristicFinding, 0, len(quarryAlerts))
+		for _, a := range quarryAlerts {
+			desc, _ := a.Details["description"].(string)
+			if desc == "" {
+				desc = "Matched embedded Project Quarry vulnerable version rule."
+			}
+			penalties = append(penalties, model.HeuristicFinding{
+				RuleID:      "QUARRY-" + a.RuleName,
+				Description: desc,
+				Points:      100,
+			})
+		}
+		return &model.RiskReport{
+			Package:         pkgName,
+			Ecosystem:       eco,
+			ResolvedVersion: version,
+			IntegrityHash:   expectedIntegrity,
+			TotalScore:      100,
+			TotalPenalties:  100,
+			RiskLevel:       model.RiskLevelCritical,
+			Verdict:         model.VerdictBlock,
+			Blocked:         true,
+			Safe:            false,
+			Action:          "block",
+			Penalties:       penalties,
+			LatencyMs:       time.Since(start).Milliseconds(),
+		}, nil
+	}
 
 	// 1. Stage 0: Cache Check (bound to expectedIntegrity when provided)
 	if s.cache != nil && version != "" && version != "latest" {

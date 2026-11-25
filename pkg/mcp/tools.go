@@ -482,7 +482,7 @@ func (h *DefaultToolHandler) vetSinglePackage(eco model.Ecosystem, rawPkg string
 	cleanToken := strings.TrimSpace(ux.SanitizeTerminalText(rawPkg))
 
 	// Validate package spec via Argus shim spec parser (blocks VCS/URL/tarball/path/alias smuggling)
-	pkgName, _, specErr := shim.ParseAndValidatePackageSpec(eco, cleanToken)
+	pkgName, pkgVer, specErr := shim.ParseAndValidatePackageSpec(eco, cleanToken)
 	if specErr != nil {
 		findings = append(findings, vetFinding{
 			Code:           CodeSlopsquatSuspect,
@@ -505,6 +505,38 @@ func (h *DefaultToolHandler) vetSinglePackage(eco model.Ecosystem, rawPkg string
 			PackageName:    safeDisplayPkgName(pkgName),
 			Reason:         "Blocked package identifier containing unsafe characters or non-ASCII homoglyphs.",
 			IsHostileInput: true,
+		})
+		return findings
+	}
+
+	// Enforce embedded Project Quarry YAML SemVer advisory rules (fail-closed on vulnerable or unpinned versions)
+	quarryAlerts, quarryErr := quarry.EvaluateEmbeddedPackageAdvisory(pkgName, pkgVer, cleanToken)
+	if quarryErr != nil {
+		findings = append(findings, vetFinding{
+			Code:           CodePolicyDeny,
+			ExitCode:       ExitSupplyChainBlock,
+			Ecosystem:      eco,
+			PackageName:    pkgName,
+			Reason:         "Embedded Project Quarry ruleset failed to load (fail-closed).",
+			DeepDetail:     sanitizeSingleLineMCP(quarryErr.Error()),
+			IsHostileInput: pkgHostile,
+		})
+		return findings
+	}
+	if len(quarryAlerts) > 0 {
+		a := quarryAlerts[0]
+		desc, _ := a.Details["description"].(string)
+		if desc == "" {
+			desc = "Matched embedded Project Quarry vulnerable version rule."
+		}
+		findings = append(findings, vetFinding{
+			Code:           CodePolicyDeny,
+			ExitCode:       ExitSupplyChainBlock,
+			Ecosystem:      eco,
+			PackageName:    pkgName,
+			Reason:         fmt.Sprintf("Blocked by Project Quarry advisory rule %q: %s", a.RuleName, sanitizeSingleLineMCP(desc)),
+			DeepDetail:     fmt.Sprintf("Quarry rule %q (%s, action=%s) blocked %s@%s: %s", a.RuleName, a.Severity, a.Action, pkgName, pkgVer, sanitizeSingleLineMCP(desc)),
+			IsHostileInput: pkgHostile,
 		})
 		return findings
 	}
@@ -1183,7 +1215,7 @@ func truncateStr(s string, maxLen int) string {
 }
 
 func quarryRulesetDigest() string {
-	return sha256Hex([]byte("argus-quarry-v1:" + string(model.EcosystemNPM) + ":" + string(model.EcosystemPyPI) + ":" + string(model.EcosystemCargo)))
+	return quarry.EmbeddedRulesDigest()
 }
 
 // notifyArgusSocketNonBlocking mirrors a compact deny telemetry event to ARGUS_SOCK when running.
