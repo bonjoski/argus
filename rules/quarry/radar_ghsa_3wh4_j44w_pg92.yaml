@@ -1,0 +1,13 @@
+name: radar_ghsa_3wh4_j44w_pg92
+version: 1.0
+description: "GHSA-3wh4-j44w-pg92 (CVE-2026-59818): Block vulnerable go.etcd.io/etcd/v3 \u2014 etcd: CRL enforcement bypass on gRPC listener when '--listen-client-http-urls' is configured"
+severity: MEDIUM
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "go\\.etcd\\.io/etcd/v3"
+        vulnerable_versions: "<3.5.32 || >=3.6.0-alpha.0, <3.6.13"

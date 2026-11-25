@@ -1,0 +1,29 @@
+{
+  "schema_version": "radar-quarry-v1",
+  "entries": [
+    {
+      "ghsa_id": "GHSA-3wh4-j44w-pg92",
+      "cve_id": "CVE-2026-59818",
+      "rule_name": "radar_ghsa_3wh4_j44w_pg92",
+      "rule_file": "radar_ghsa_3wh4_j44w_pg92.yaml",
+      "ecosystem": "go",
+      "package_name": "go.etcd.io/etcd/v3",
+      "vulnerable_versions": "<3.5.32 || >=3.6.0-alpha.0, <3.6.13",
+      "vulnerable_sample": "3.5.31",
+      "patched_sample": "3.6.13",
+      "command_sample": "go get go.etcd.io/etcd/v3"
+    },
+    {
+      "ghsa_id": "GHSA-8cg3-r6g9-fpg2",
+      "cve_id": "CVE-2026-59831",
+      "rule_name": "radar_ghsa_8cg3_r6g9_fpg2",
+      "rule_file": "radar_ghsa_8cg3_r6g9_fpg2.yaml",
+      "ecosystem": "go",
+      "package_name": "github.com/cli/cli/v2",
+      "vulnerable_versions": ">=2.10.0, <2.96.0",
+      "vulnerable_sample": "2.10.0",
+      "patched_sample": "2.96.0",
+      "command_sample": "go get github.com/cli/cli/v2"
+    }
+  ]
+}
