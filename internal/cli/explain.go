@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/bonjoski/shield/pkg/provider"
-	"github.com/bonjoski/shield/pkg/shield"
 	"github.com/spf13/cobra"
 
+	"bonjoski/argus/internal/aiadvisor"
 	"bonjoski/argus/pkg/quarry"
 	"bonjoski/argus/pkg/ux"
 )
@@ -71,26 +70,29 @@ func newExplainCmd() *cobra.Command {
 			}
 
 			if explainAI {
-				engine := shield.NewEngine(shield.DefaultConfig())
-				prompt := fmt.Sprintf("Explain the supply-chain security risks for package %q in ecosystem %q. Analyze if it appears to be slopsquatted, hallucinated, or typo-squatted, and recommend the canonical packages.", pkgName, explainEcosystem)
+				redactor := aiadvisor.NewRedactor(aiadvisor.DefaultRedactorConfig())
+				cleanPkgName := aiadvisor.NormalizeInvisibleChars(pkgName)
+				cleanEco := aiadvisor.NormalizeInvisibleChars(explainEcosystem)
+				prompt := fmt.Sprintf("Explain the supply-chain security risks for package %q in ecosystem %q. Analyze if it appears to be slopsquatted, hallucinated, or typo-squatted, and recommend the canonical packages.", cleanPkgName, cleanEco)
 
-				redacted, _, err := engine.Redact(prompt)
+				redacted, tm, err := redactor.Redact(prompt)
 				if err != nil {
 					return fmt.Errorf("failed to redact prompt: %w", err)
 				}
-				if err := engine.FailClosedWireGuard([]byte(redacted)); err != nil {
+				defer tm.Zeroize()
+				if err := redactor.FailClosedWireGuard([]byte(redacted)); err != nil {
 					return fmt.Errorf("wire guard blocked outbound prompt: %w", err)
 				}
 
-				prov := provider.NewFromEnv()
-				resp, err := prov.Complete(cmd.Context(), provider.Request{
+				prov := aiadvisor.NewProviderFromEnv()
+				resp, err := prov.Complete(cmd.Context(), aiadvisor.Request{
 					Model: "auto",
-					Messages: []provider.Message{
-						{Role: provider.RoleUser, Content: redacted},
+					Messages: []aiadvisor.Message{
+						{Role: aiadvisor.RoleUser, Content: redacted},
 					},
 				})
 				if err != nil {
-					return fmt.Errorf("shield ai completion failed: %w", err)
+					return fmt.Errorf("ai completion failed: %w", err)
 				}
 
 				cmd.Println("\n[Shield Protected AI Advisory]")
