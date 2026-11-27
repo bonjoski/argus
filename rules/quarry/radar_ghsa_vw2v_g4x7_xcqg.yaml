@@ -1,0 +1,13 @@
+name: radar_ghsa_vw2v_g4x7_xcqg
+version: 1.0
+description: "GHSA-vw2v-g4x7-xcqg (CVE-2026-68539): Block vulnerable fulgur \u2014 fulgur allows Unbounded string-set value accumulation causes memory/CPU exhaustion (denial of service)"
+severity: HIGH
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "fulgur"
+        vulnerable_versions: ">=0.4.4, <0.28.0"

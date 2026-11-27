@@ -1,0 +1,13 @@
+name: radar_ghsa_53pm_wgxf_c6qf
+version: 1.0
+description: "GHSA-53pm-wgxf-c6qf (CVE-2026-132276): Block vulnerable wcmatch \u2014 wcmatch: Polynomial-time ReDoS when matching untrusted names against multi-star patterns (default flags)"
+severity: MEDIUM
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "wcmatch"
+        vulnerable_versions: "<=11.1.0"

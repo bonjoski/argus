@@ -8,13 +8,13 @@ import (
 )
 
 func TestVersion(t *testing.T) {
-	if Version != "v0.11.6" {
-		t.Errorf("expected Version to be v0.11.6, got %s", Version)
+	if Version != "v0.11.7" {
+		t.Errorf("expected Version to be v0.11.7, got %s", Version)
 	}
 
 	formatted := Formatted()
-	if !strings.Contains(formatted, "v0.11.6") {
-		t.Errorf("expected Formatted() to contain v0.11.6, got %s", formatted)
+	if !strings.Contains(formatted, "v0.11.7") {
+		t.Errorf("expected Formatted() to contain v0.11.7, got %s", formatted)
 	}
 
 	// Verify consistency with root VERSION file

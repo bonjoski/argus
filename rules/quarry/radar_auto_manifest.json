@@ -14,6 +14,30 @@
       "command_sample": "go get go.etcd.io/etcd/v3"
     },
     {
+      "ghsa_id": "GHSA-53pm-wgxf-c6qf",
+      "cve_id": "CVE-2026-132276",
+      "rule_name": "radar_ghsa_53pm_wgxf_c6qf",
+      "rule_file": "radar_ghsa_53pm_wgxf_c6qf.yaml",
+      "ecosystem": "pip",
+      "package_name": "wcmatch",
+      "vulnerable_versions": "<=11.1.0",
+      "vulnerable_sample": "11.1.0",
+      "patched_sample": "11.2.0",
+      "command_sample": "pip install wcmatch"
+    },
+    {
+      "ghsa_id": "GHSA-859w-52fx-hcm6",
+      "cve_id": "CVE-2026-64855",
+      "rule_name": "radar_ghsa_859w_52fx_hcm6",
+      "rule_file": "radar_ghsa_859w_52fx_hcm6.yaml",
+      "ecosystem": "pip",
+      "package_name": "soapbar",
+      "vulnerable_versions": "<0.13.0",
+      "vulnerable_sample": "0.12.9",
+      "patched_sample": "0.13.0",
+      "command_sample": "pip install soapbar"
+    },
+    {
       "ghsa_id": "GHSA-8cg3-r6g9-fpg2",
       "cve_id": "CVE-2026-59831",
       "rule_name": "radar_ghsa_8cg3_r6g9_fpg2",
@@ -24,6 +48,42 @@
       "vulnerable_sample": "2.10.0",
       "patched_sample": "2.96.0",
       "command_sample": "go get github.com/cli/cli/v2"
+    },
+    {
+      "ghsa_id": "GHSA-c4hm-4h84-2cf3",
+      "cve_id": "CVE-2026-59726",
+      "rule_name": "radar_ghsa_c4hm_4h84_2cf3",
+      "rule_file": "radar_ghsa_c4hm_4h84_2cf3.yaml",
+      "ecosystem": "npm",
+      "package_name": "ruflo",
+      "vulnerable_versions": "<3.16.3",
+      "vulnerable_sample": "3.16.2",
+      "patched_sample": "3.16.3",
+      "command_sample": "npm install ruflo"
+    },
+    {
+      "ghsa_id": "GHSA-crj3-q72p-ggqm",
+      "cve_id": "CVE-2026-64670",
+      "rule_name": "radar_ghsa_crj3_q72p_ggqm",
+      "rule_file": "radar_ghsa_crj3_q72p_ggqm.yaml",
+      "ecosystem": "npm",
+      "package_name": "@waline/client",
+      "vulnerable_versions": "<=3.16.2",
+      "vulnerable_sample": "3.16.2",
+      "patched_sample": "",
+      "command_sample": "npm install @waline/client"
+    },
+    {
+      "ghsa_id": "GHSA-vw2v-g4x7-xcqg",
+      "cve_id": "CVE-2026-68539",
+      "rule_name": "radar_ghsa_vw2v_g4x7_xcqg",
+      "rule_file": "radar_ghsa_vw2v_g4x7_xcqg.yaml",
+      "ecosystem": "rust",
+      "package_name": "fulgur",
+      "vulnerable_versions": ">=0.4.4, <0.28.0",
+      "vulnerable_sample": "0.4.4",
+      "patched_sample": "0.28.0",
+      "command_sample": "cargo add fulgur"
     }
   ]
 }

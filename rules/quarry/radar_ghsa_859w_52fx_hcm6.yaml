@@ -1,0 +1,13 @@
+name: radar_ghsa_859w_52fx_hcm6
+version: 1.0
+description: "GHSA-859w-52fx-hcm6 (CVE-2026-64855): Block vulnerable soapbar \u2014 soapbar: verify_envelope_bsp accepts an unauthenticated embedded certificate (signature forgery / authentication bypass)"
+severity: HIGH
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "soapbar"
+        vulnerable_versions: "<0.13.0"

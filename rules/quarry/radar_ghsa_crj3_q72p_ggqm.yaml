@@ -1,0 +1,13 @@
+name: radar_ghsa_crj3_q72p_ggqm
+version: 1.0
+description: "GHSA-crj3-q72p-ggqm (CVE-2026-64670): Block vulnerable @waline/client \u2014 @waline/client vulnerable to stored XSS through unsanitized comment edit previews"
+severity: CRITICAL
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "@waline/client"
+        vulnerable_versions: "<=3.16.2"

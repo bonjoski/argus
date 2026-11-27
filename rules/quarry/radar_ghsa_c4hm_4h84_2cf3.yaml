@@ -1,0 +1,13 @@
+name: radar_ghsa_c4hm_4h84_2cf3
+version: 1.0
+description: "GHSA-c4hm-4h84-2cf3 (CVE-2026-59726): Block vulnerable ruflo \u2014 ruflo MCP bridge allows unauthenticated remote code execution in default Docker Compose deployments"
+severity: CRITICAL
+window: 60s
+action: kill
+causal_sequence:
+  - step: vulnerable_package_resolution
+    events:
+      - layer: supply_chain
+        action: package_install|resolve_package|dependency_add|pre_check
+        package_name_matches: "ruflo"
+        vulnerable_versions: "<3.16.3"
