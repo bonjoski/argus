@@ -76,15 +76,24 @@ func (e *Event) String() string {
 }
 
 // splitPackageAndVersion separates an inline package specifier (e.g. "pkg@1.2.3",
-// "github.com/nats-io/nats-server/v2@v2.12.7", "@scope/pkg@1.0.0", "pkg==0.20.0")
-// into its clean package name and version string.
+// "github.com/nats-io/nats-server/v2@v2.12.7", "@scope/pkg@1.0.0", "pkg==0.20.0",
+// "pkg>=1.0.0", "pkg[dev]~=1.2") into its clean package name and version string.
 func splitPackageAndVersion(raw string) (string, string) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return "", ""
 	}
-	if idx := strings.Index(s, "=="); idx > 0 {
-		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+2:])
+	// Strip inline environment markers (e.g. "pkg==1.0; python_version<'3.12'")
+	if semi := strings.IndexByte(s, ';'); semi > 0 {
+		s = strings.TrimSpace(s[:semi])
+	}
+	// Check PEP 440 / pip / uv comparison operators in longest-first order
+	for _, op := range []string{"===", "==", ">=", "<=", "~=", "!=", ">", "<"} {
+		if idx := strings.Index(s, op); idx > 0 {
+			name := stripPackageExtras(strings.TrimSpace(s[:idx]))
+			ver := strings.TrimSpace(s[idx+len(op):])
+			return name, ver
+		}
 	}
 	// Find '@' after any scoped prefix (e.g., "@scope/pkg@1.2.3")
 	searchStart := 0
@@ -97,9 +106,37 @@ func splitPackageAndVersion(raw string) (string, string) {
 	}
 	if relIdx := strings.LastIndexByte(s[searchStart:], '@'); relIdx > 0 {
 		idx := searchStart + relIdx
-		return strings.TrimSpace(s[:idx]), strings.TrimSpace(s[idx+1:])
+		name := stripPackageExtras(strings.TrimSpace(s[:idx]))
+		ver := strings.TrimSpace(s[idx+1:])
+		return name, ver
 	}
-	return s, ""
+	return stripPackageExtras(s), ""
+}
+
+// stripPackageExtras removes PEP 508 extras brackets (e.g. "suki-zov[dev]" -> "suki-zov").
+func stripPackageExtras(name string) string {
+	if idx := strings.IndexByte(name, '['); idx > 0 && strings.HasSuffix(name, "]") {
+		return strings.TrimSpace(name[:idx])
+	}
+	return name
+}
+
+// GetEcosystem extracts the package ecosystem (e.g. "pypi", "npm", "go", "cargo") if provided.
+func (e *Event) GetEcosystem() string {
+	if e == nil {
+		return ""
+	}
+	if e.Args != nil {
+		if eco, ok := e.Args["ecosystem"].(string); ok && strings.TrimSpace(eco) != "" {
+			return strings.ToLower(strings.TrimSpace(eco))
+		}
+	}
+	if e.Metadata != nil {
+		if eco, ok := e.Metadata["ecosystem"]; ok && strings.TrimSpace(eco) != "" {
+			return strings.ToLower(strings.TrimSpace(eco))
+		}
+	}
+	return ""
 }
 
 // getRawPackageSpec extracts the raw package token (potentially including @version or ==version).

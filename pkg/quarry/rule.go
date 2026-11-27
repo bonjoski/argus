@@ -26,6 +26,7 @@ type EventMatcher struct {
 	CommandMatches string   `yaml:"command_matches,omitempty" json:"command_matches,omitempty"`
 
 	// Slopsquatting & Supply Chain heuristic matchers
+	Ecosystem            string `yaml:"ecosystem,omitempty" json:"ecosystem,omitempty"`
 	PackageMatches       string `yaml:"package_matches,omitempty" json:"package_matches,omitempty"`
 	PackageNameMatches   string `yaml:"package_name_matches,omitempty" json:"package_name_matches,omitempty"`
 	VulnerableVersions   string `yaml:"vulnerable_versions,omitempty" json:"vulnerable_versions,omitempty"`
@@ -163,6 +164,7 @@ type CompiledMatcher struct {
 	PathRegex            *regexp.Regexp
 	ToolRegex            *regexp.Regexp
 	CommandRegex         *regexp.Regexp
+	Ecosystem            string
 	PackageRegex         *regexp.Regexp
 	VulnerableVersions   *VersionConstraintSet
 	HookRegex            *regexp.Regexp
@@ -198,6 +200,7 @@ func CompileRule(r *Rule) (*CompiledRule, error) {
 			cm := CompiledMatcher{
 				Raw:                  em,
 				NormLayer:            NormalizeLayer(em.Layer),
+				Ecosystem:            strings.ToLower(strings.TrimSpace(em.Ecosystem)),
 				DestNotIn:            em.DestNotIn,
 				DestIn:               em.DestIn,
 				CheckSlopsquat:       em.CheckSlopsquat,
@@ -347,6 +350,13 @@ func (cm *CompiledMatcher) Matches(e *Event) bool {
 			return false
 		}
 		if matchesAnyDestination(e.Destination, cm.DestNotIn) {
+			return false
+		}
+	}
+
+	// 7b. Ecosystem check (fail-closed if event omits ecosystem)
+	if cm.Ecosystem != "" {
+		if evEco := e.GetEcosystem(); evEco != "" && !strings.EqualFold(evEco, cm.Ecosystem) {
 			return false
 		}
 	}

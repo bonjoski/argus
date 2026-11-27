@@ -124,6 +124,7 @@ func (fsm *FSM) Step(event *Event) *Alert {
 			MatchedEvents: triggeredBranch.MatchedEvents,
 			LatencyNs:     latency.Nanoseconds(),
 			Details: map[string]any{
+				"description":       fsm.rule.Rule.Description,
 				"window_configured": fsm.rule.Rule.Window.String(),
 				"sequence_duration": latency.String(),
 				"branches_tracked":  len(fsm.branches),

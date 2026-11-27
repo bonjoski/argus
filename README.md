@@ -420,6 +420,7 @@ Every primary developer use case is backed by dedicated, copy-pasteable recipes 
 | **Real-Time SIEM Killswitch Daemon** | Run the local event bus to broadcast instant revocation alerts:<br/>`argus daemon start && argus ping` | [Guide](docs/use-cases/03-siem-killswitch-daemon.md) |
 | **Automated CI/CD Supply Chain Gate** | Audit dependency updates in pull requests within GitHub Actions:<br/>`argus diff --manifest package.json --fail-on-risk=HIGH` | [Guide](docs/use-cases/04-cicd-supply-chain-gate.md) |
 | **AI Slopsquatting & Deadbugz MCP Defense** | Intercept synthetic AI package hallucinations, high-entropy slop, and Deadbugz MCP tool reflection:<br/>`argus exec -- npm install <pkg>` or `argus mcp audit` | [Guide](docs/use-cases/05-slopsquat-ai-hallucination-defense.md) |
+| **PyPI/npm Malware & Stealer-Pattern Quarry Rules** | Deterministically hard-block known malicious drops (`suki-zov`, `ceaser-baileys`) across casing/version-specifier evasion and flag stealer-like agent frameworks (`kiss-agent-framework` / env-cred + `authorized_keys`/tunnel patterns) with calm remediation to `airlock run --profile untrusted-agent` | [Rules](rules/quarry/) |
 
 ---
 

@@ -145,7 +145,13 @@ func EvaluateEmbeddedPackageAdvisory(pkgName, version, rawCmd string) ([]*Alert,
 		step := &cr.Steps[0]
 		isAdvisoryRule := false
 		for i := range step.Matchers {
-			if step.Matchers[i].PackageRegex != nil && step.Matchers[i].VulnerableVersions != nil {
+			m := &step.Matchers[i]
+			if m.PackageRegex != nil && m.VulnerableVersions != nil {
+				isAdvisoryRule = true
+				break
+			}
+			// Also enforce unconditional single-step supply-chain malware block rules (action: kill)
+			if m.NormLayer == LayerSupplyChain && m.PackageRegex != nil && !m.CheckSlopsquat && strings.EqualFold(cr.Rule.Action, "kill") {
 				isAdvisoryRule = true
 				break
 			}
